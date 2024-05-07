@@ -305,6 +305,8 @@ class Main_Series_Times():
             print('\n >>>> El analisis tardo <<<<')
             self.functions.get_time_process(round(end_time - start_time, 2))
 
+            print()
+
         except Exception as e:
             print(traceback.format_exc())
         
