@@ -120,10 +120,10 @@ class Main_Series_Times():
 
         print("+*+*"*30)
                 
-        return data, period, col_serie, col_gran
+        return data, period, col_serie, col_gran, name_file.split(".")[0]
 
     # Modulo: Analisis y generacion de los patrones de demanda para la viabilidad de clasificacion de observaciones
-    def data_demand(self, data, period, col_serie, col_gran):
+    def data_demand(self, data, period, col_serie, col_gran, name_file):
         print("\n >> DataFrame: Sales <<<\n")
         data[col_serie[0]] = pd.to_datetime(data[col_serie[0]])
         data['year'] = data[col_serie[0]].dt.year
@@ -154,11 +154,6 @@ class Main_Series_Times():
                 columns.remove(col_serie[1])
                 print("\n > Agrupado por: {}\n".format(columns))
                 df = self.queries.grouped_data(df, columns, col_serie[1])
-
-                #df["date"] = pd.to_datetime(df["date"])
-                #df['week'] = df["date"].dt.isocalendar().week
-                #df['month'] = df["date"].dt.month
-                #df['year'] = df["date"].dt.year
                 
                 df[col_serie[0]] = pd.to_datetime(df[col_serie[0]])
                 df['week'] = df[col_serie[0]].dt.isocalendar().week
@@ -192,8 +187,8 @@ class Main_Series_Times():
                     
                     # Proceso: Identificacion de valores atipicos en base a la granularidad
                     #name_graph = col[1] + "_" + str(list(idx)[1])
-                    name_graph = col[0] + "_" + str(list(idx)[0]) + "_" + str(year)
-                    outliers_index, without_outliers_index = self.functions.get_outliers(group, col_obs = col_serie[1], col_name = name_graph)
+                    name_graph = col[0] + "_" + str(list(idx)[0]) + "_" + str(year) # variable_valor_año
+                    outliers_index, without_outliers_index = self.functions.get_outliers(group, col_obs = col_serie[1], name_graph = name_graph, name_file = name_file)
                     print('\n >> # Outliers:', len(outliers_index))
                     print(' >> # Without Outliers: {} \n'.format(len(without_outliers_index)))
 
@@ -262,7 +257,7 @@ class Main_Series_Times():
             source_data = self.functions.select_source_data()
             # Extraccion de datos por archivo y seleccion de variables analizar
             if source_data == 1:
-                data, period, col_serie, col_gran = self.select_options()
+                data, period, col_serie, col_gran, name_file = self.select_options()
 
             # Extraccion de datos por base de datos (Fijar las variables analizar, si no aplicar el modulo "select_options")
             elif source_data == 2:
@@ -273,7 +268,7 @@ class Main_Series_Times():
                 sys.exit()
 
             # Proceso: Clasificación de los patrones de demanda
-            data_frame_metric = self.data_demand(data, period, col_serie, col_gran)
+            data_frame_metric = self.data_demand(data, period, col_serie, col_gran, name_file)
 
             # Proceso: Generacion de la estractura final del dataframe clasificacion en base a demanda
             print("\n >>> Dataframe: Demand Classifier <<< \n")

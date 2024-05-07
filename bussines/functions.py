@@ -325,7 +325,7 @@ class Functions():
             temp["year"] = temp.granularity.str.split(" ", expand = True)[0]
             data_final = pd.concat([data_final, temp], axis = 0, ignore_index = False)
     
-        data_final = data_final.reset_index()
+        data_final.reset_index(inplace = True, drop = True)
             
         return data_final
     
@@ -357,7 +357,7 @@ class Functions():
         return detail_data_gran
     
     # Modulo: Identificacion de outliers (ruido o datos atipicos)
-    def get_outliers(self, data, col_obs, col_name, threshold = 3):
+    def get_outliers(self, data, col_obs, name_graph, name_file, threshold = 3):
         values = data[col_obs]
         # Handling outliers with a z-score threshold
         z_scores = np.abs(stats.zscore(values))
@@ -379,10 +379,23 @@ class Functions():
             plt.title('Filtered Data (Outliers Removed)')
             plt.legend()
 
-            print("\n >> Proceso de guardado (Grafica)")            
+            print("\n >> Proceso de guardado (Grafica)")
+            # Validacion de la carpeta principal
             name_folder = "graphics/"
             self.validate_path(name_folder)
-            name_file = col_name + "_grap_outlier"
+
+            # Validacion de subcarpetas
+            name_folder = name_folder + name_file + "/"
+            self.validate_path(name_folder)
+
+            name_folder = name_folder + str(name_graph.split("_")[-1]) + "/"
+            self.validate_path(name_folder)
+
+            name_folder = name_folder + str(name_graph.split("_")[0]) + "/"
+            self.validate_path(name_folder)
+
+            # Definicion del nombre de la grafica
+            name_file = name_graph + "_grap_outlier"
             plt.savefig(self.path + name_folder + name_file + '.png', dpi = 400, bbox_inches = 'tight')
             plt.close()
             #plt.show()
