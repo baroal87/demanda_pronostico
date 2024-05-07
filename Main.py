@@ -125,7 +125,14 @@ class Main_Series_Times():
     # Modulo: Analisis y generacion de los patrones de demanda para la viabilidad de clasificacion de observaciones
     def data_demand(self, data, period, col_serie, col_gran, name_file):
         print("\n >> DataFrame: Sales <<<\n")
-        data[col_serie[0]] = pd.to_datetime(data[col_serie[0]])
+        try:
+            data[col_serie[0]] = pd.to_datetime(data[col_serie[0]], format = "%Y-%m-%d")
+            
+        except:
+            data[col_serie[0]] = data[col_serie[0]].apply(lambda x: pd.to_datetime(x).strftime("%Y-%m-%d"))
+            data[col_serie[0]] = pd.to_datetime(data[col_serie[0]], format = "%Y-%m-%d")
+
+        data = data[data[col_serie[1]] > 0]
         data['year'] = data[col_serie[0]].dt.year
         print(data.head())
         print("---"*30)
@@ -167,45 +174,11 @@ class Main_Series_Times():
                 col = columns[:-1]
                 #col.insert(len(columns), "year")
                 # Eliminacion debido a la iteracion por año
-                #col.insert(0, "year")
+                col.insert(0, "year")
                 #print(col)
-                grouped = df.groupby(col)
-                label = []
-                count = []
-                outliers = []
-                not_outliers = []
-                for idx, group in grouped:
-                    print(idx)
-                    #for col_name in group[col[1:]]:
-                    for col_name in group[col]:
-                        group[col_name] = group[col_name].astype(str)
-
-                    group['month'] = group[col_serie[0]].dt.month
-                    #group["label"] = group[col[:-1]].apply("_".join, axis=1)
-                    #group["label"] = group[col[1:]].apply("_".join, axis = 1)
-                    group["label"] = group[col].apply("_".join, axis = 1)
-                    
-                    # Proceso: Identificacion de valores atipicos en base a la granularidad
-                    #name_graph = col[1] + "_" + str(list(idx)[1])
-                    name_graph = col[0] + "_" + str(list(idx)[0]) + "_" + str(year) # variable_valor_año
-                    outliers_index, without_outliers_index = self.functions.get_outliers(group, col_obs = col_serie[1], name_graph = name_graph, name_file = name_file)
-                    print('\n >> # Outliers:', len(outliers_index))
-                    print(' >> # Without Outliers: {} \n'.format(len(without_outliers_index)))
-
-                    #label.append(str(list(idx)[:-1]).replace("[", "").replace("]", ""))
-                    label.extend(group.label.unique().tolist())
-                    count.append(len(group.month.unique().tolist()))
-                    outliers.append(len(outliers_index))
-                    not_outliers.append(len(without_outliers_index))
-                    
-                data_label = pd.DataFrame()
-                data_label["label"] = label
-                data_label["count_month"] = count
-                data_label["outliers"] = outliers
-                data_label["without_outliers"] = not_outliers
-                #data_label = data_label.groupby(["label"]).agg(months = ("count_month", 'sum')).reset_index()
-                data_label = data_label.groupby(["label"]).agg(months = ("count_month", 'sum'), count_outliers = ("outliers", "sum"), 
-                                                            count_not_outliers = ("without_outliers", "sum")).reset_index()
+                data_label = self.functions.get_count_series(df, columns_gran = col, col_time = col_serie[0])
+                data_label = pd.merge(data_label, self.functions.get_count_outliers(df, columns_gran = col[1:], col_time = col_serie[1], name_file = name_file, period = period, year = year), 
+                                      how = "left", on = ["label"])
                 print(data_label.head())
                 print("---"*20)
                 
@@ -220,12 +193,12 @@ class Main_Series_Times():
 
                 # Proceso: Compute y generacion del coeficiente de variacion - CV2
                 print("\n >>> DataFrame: CV2 <<<\n")
-                cv_data = self.functions.get_cv(df, columns = columns, potencia = 2)
+                cv_data = self.functions.get_cv(df, columns = columns, col_obs = col_serie[1], potencia = 2)
                 print(cv_data.head())
                 print("---"*20)
 
                 # Proceso: Union de los analisis del ADI y CV2
-                print("\n >>> DataFrame: Analisis Finalizada - ({}) \n".format(col[0]))
+                print("\n >>> DataFrame: Analisis Finalizada - ({}) \n".format(col[1]))
                 df = pd.merge(adi_data[["label", "adi"]], cv_data[["label", "cv", "cv2"]], how = "left", on = ["label"])
 
                 # Proceso: Clasificacion del tipo de categoria sobre el intervalo de demanda por ADI y CV2
@@ -262,6 +235,12 @@ class Main_Series_Times():
             # Extraccion de datos por base de datos (Fijar las variables analizar, si no aplicar el modulo "select_options")
             elif source_data == 2:
                 data = self.queries.get_data_netezza()
+                # Definir periodo, variables de series (tiempo y observacion), columnas o variables de granuralidad de los datos
+                period, col_serie, col_gran = ""
+                
+                # Detefinir el nombre para la validacion de las rutas para almacenar las graficas (outliers)
+                # puede ser el nombre de la tabla o subfijo (el campo debe ser dinamico para evitar re-escrituras de las graficas)
+                name_file = "name_table"
                 
             else:
                 print(" >>> Error: Seleccion de fuente incorrecta !!!\n")
@@ -279,8 +258,19 @@ class Main_Series_Times():
 
             # Guardado del analisis - Dataframe intervalos de demanda
             if source_data == 1:
-                self.functions.validate_path(name_folder = "result/")
-                self.queries.save_data_file(data_final)
+                # Validacion de la carpeta principal
+                name_folder = "result/"
+                self.functions.validate_path(name_folder)
+
+                # Validacion de subcarpetas - nombre del archivo
+                name_folder = name_folder + name_file + "/"
+                self.functions.validate_path(name_folder)
+
+                # Validacion de subcarpetas - periodo analisis (Semanal o Mensual)
+                name_folder = name_folder + period + "/"
+                self.functions.validate_path(name_folder)
+
+                self.queries.save_data_file(data_final, name_folder)
                 
             else:
                 self.queries.save_data_bd(data_final)
@@ -294,11 +284,23 @@ class Main_Series_Times():
 
             # Guardado del analisis - Dataframe detail
             if source_data == 1:
-                self.functions.validate_path(name_folder = "result/")
-                self.queries.save_data_file(data_final)
+                # Validacion de la carpeta principal
+                name_folder = "result/"
+                self.functions.validate_path(name_folder)
+
+                # Validacion de subcarpetas - nombre del archivo
+                name_folder = name_folder + name_file + "/"
+                self.functions.validate_path(name_folder)
+
+                # Validacion de subcarpetas - periodo analisis (Semanal o Mensual)
+                name_folder = name_folder + period + "/"
+                self.functions.validate_path(name_folder)
+
+                #self.functions.validate_path(name_folder = "result/")
+                self.queries.save_data_file(detail_data_gran, name_folder)
                 
             else:
-                self.queries.save_data_bd(data_final)
+                self.queries.save_data_bd(detail_data_gran)
             print("---"*20)
 
             end_time = time()

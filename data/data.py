@@ -31,7 +31,7 @@ class Queries():
         return data
 
     # Modulo: Determinacion del nombre y guardado del dataframe resultante (Archivo)
-    def save_data_file(self, data):
+    def save_data_file(self, data, name_folder):
         if not self.test:
             print("\n >> Proceso de guardado (Archivo)")
             name_file = input("\n Ingrese el nombre del archivo: ")
@@ -46,7 +46,8 @@ class Queries():
                 elif validate.lower() == "n":
                     name_file = input("\n Ingrese el nombre del archivo: ")
 
-            path = self.path + "result/"
+            #path = self.path + "result/"
+            path = self.path + name_folder
             data.to_csv(path + name_file + ".csv", index = False)
             print(" >> Archivo Guardado correctamente")
             

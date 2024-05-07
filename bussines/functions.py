@@ -111,7 +111,7 @@ class Functions():
                 if x == total:
                     break
 
-                elif (x < 1) & (x > total):
+                elif (x < 1) | (x > total):
                     print("\n Indice incorrecto !!! \n")
 
                 elif x in list_col:
@@ -172,7 +172,7 @@ class Functions():
         while True:
             try:
                 x = int(input('Ingrese numero de columna (Tiempo): '))    
-                if (x < 1) & (x > total):
+                if (x < 1) | (x > total):
                     print("\n Indice incorrecto !!! \n")
 
                 else:
@@ -185,7 +185,7 @@ class Functions():
         while True:
             try:
                 x = int(input('Ingrese numero de columna (Observacion): '))    
-                if (x < 1) & (x > total):
+                if (x < 1) | (x > total):
                     print("\n Indice incorrecto !!! \n")
 
                 else:
@@ -218,7 +218,7 @@ class Functions():
                 if x == total:
                     break
 
-                elif (x < 1) & (x > total):
+                elif (x < 1) | (x > total):
                     print("\n Indice incorrecto !!! \n")
 
                 elif x in col_name:
@@ -240,10 +240,11 @@ class Functions():
         return col_gran
 
     # Modulo: # Analisis y compute del coeficiente de variacion - CV2
-    def get_cv(self, data, columns, potencia = 2):
+    def get_cv(self, data, columns, col_obs, potencia = 2):
         #cv = round(pow(data.Demand.std() / data.Demand.mean(), 2), 2)
         # Agrupamiento de valores en base a la variables de observacion seleccionada
-        data_retail = data.groupby(columns).agg(sales = (columns[0], 'sum'), count_sales = (columns[0], 'count')).reset_index()
+        #data_retail = data.groupby(columns).agg(sales = (columns[0], 'sum'), count_sales = (columns[0], 'count')).reset_index()
+        data_retail = data.groupby(columns).agg(sales = (col_obs, 'sum'), count_sales = (col_obs, 'count')).reset_index()
         for col in data_retail[columns[:-1]]:
             data_retail[col] = data_retail[col].astype(str)
 
@@ -280,8 +281,8 @@ class Functions():
         # Definicion de la etiqueta en base a la granularidad de las variables seleccionadas
         data_retail["label"] = data_retail[columns[:-1]].apply("_".join, axis = 1)
 
-        print(data_retail.head())
-        print("---"*20)
+        #print(data_retail.head())
+        #print("---"*20)
 
         # Extraccion del periodo por valor de la columna analizar
         adi_data = data_retail.label.value_counts().reset_index()
@@ -326,6 +327,10 @@ class Functions():
             data_final = pd.concat([data_final, temp], axis = 0, ignore_index = False)
     
         data_final.reset_index(inplace = True, drop = True)
+        data_final.adi.fillna(0, inplace = True)
+        data_final.cv.fillna(0, inplace = True)
+        data_final.cv2.fillna(0, inplace = True)
+        data_final.category.fillna("None", inplace = True)
             
         return data_final
     
@@ -345,19 +350,20 @@ class Functions():
             part = [len(temp[temp.category == cat]) for cat in category]
             profile.extend(category)
             number.extend(part)
-            porc.extend([(x/total) * 100 for x in part])
-            years.append(year)
+            porc.extend([(x / total) * 100 for x in part])
+            years.extend([year for _ in range(len(category))])
 
         # Construccion del dataframe detail
         detail_data_gran["profile"] = profile
         detail_data_gran["count"] = number
         detail_data_gran["percentage"] = porc
+        detail_data_gran.percentage = detail_data_gran.percentage.round(2)
         detail_data_gran["year"] = years
 
         return detail_data_gran
     
     # Modulo: Identificacion de outliers (ruido o datos atipicos)
-    def get_outliers(self, data, col_obs, name_graph, name_file, threshold = 3):
+    def get_outliers(self, data, col_obs, name_graph, name_file, col_period, threshold = 3):
         values = data[col_obs]
         # Handling outliers with a z-score threshold
         z_scores = np.abs(stats.zscore(values))
@@ -369,6 +375,7 @@ class Functions():
         without_outliers = np.where(np.abs(z_scores) <= threshold)[0]
         outliers = np.where(np.abs(z_scores) > threshold)[0]
 
+        """
         # Plot the filtered data without outliers
         if not self.test:
             plt.figure(figsize = (8, 4))
@@ -384,13 +391,19 @@ class Functions():
             name_folder = "graphics/"
             self.validate_path(name_folder)
 
-            # Validacion de subcarpetas
+            # Validacion de subcarpetas - nombre del archivo
             name_folder = name_folder + name_file + "/"
             self.validate_path(name_folder)
+            
+            # Validacion de subcarpetas - periodo analisis (Semanal o Mensual)
+            name_folder = name_folder + col_period + "/"
+            self.validate_path(name_folder)
 
+            # Validacion de subcarpetas - año
             name_folder = name_folder + str(name_graph.split("_")[-1]) + "/"
             self.validate_path(name_folder)
 
+            # Validacion de subcarpetas - columna (variable de granuralidad)
             name_folder = name_folder + str(name_graph.split("_")[0]) + "/"
             self.validate_path(name_folder)
 
@@ -399,8 +412,67 @@ class Functions():
             plt.savefig(self.path + name_folder + name_file + '.png', dpi = 400, bbox_inches = 'tight')
             plt.close()
             #plt.show()
+        """
         
         return outliers, without_outliers
+
+    def get_count_series(self, data, columns_gran, col_time):
+        grouped = data.groupby(columns_gran)
+        label = []
+        count = []
+
+        for idx, group in grouped:
+            #print(idx)
+            for col_name in group[columns_gran[1:]]:
+                group[col_name] = group[col_name].astype(str)
+
+            group['month'] = group[col_time].dt.month
+            #group["label"] = group[columns_gran[:-1]].apply("_".join, axis=1)
+            group["label"] = group[columns_gran[1:]].apply("_".join, axis = 1)
+            
+            #label.append(str(list(idx)[:-1]).replace("[", "").replace("]", ""))
+            label.extend(group.label.unique().tolist())
+            count.append(len(group.month.unique().tolist()))
+            
+            
+        data_label = pd.DataFrame()
+        data_label["label"] = label
+        data_label["count_month"] = count
+        data_label = data_label.groupby(["label"]).agg(months = ("count_month", 'sum')).reset_index()
+
+        return data_label
+
+    def get_count_outliers(self, data, columns_gran, col_time, name_file, period, year):
+        grouped = data.groupby(columns_gran)
+        label = []
+        outliers = []
+        not_outliers = []
+
+        for idx, group in grouped:
+            #print(idx)
+            for col_name in group[columns_gran]:
+                group[col_name] = group[col_name].astype(str)
+
+            group["label"] = group[columns_gran].apply("_".join, axis = 1)
+            # Proceso: Identificacion de valores atipicos en base a la granularidad
+            #name_graph = col[1] + "_" + str(list(idx)[1])
+            name_graph = columns_gran[0] + "_" + str(list(idx)[0]) + "_" + str(year) # variable_valor_año
+            outliers_index, without_outliers_index = self.get_outliers(group, col_obs = col_time, name_graph = name_graph, name_file = name_file, col_period = period)
+            #print('\n >> # Outliers:', len(outliers_index))
+            #print(' >> # Without Outliers: {} \n'.format(len(without_outliers_index)))
+
+            label.extend(group.label.unique().tolist())
+            outliers.append(len(outliers_index))
+            not_outliers.append(len(without_outliers_index))
+
+        data_label = pd.DataFrame()
+        data_label["label"] = label
+        data_label["outliers"] = outliers
+        data_label["without_outliers"] = not_outliers
+        data_label = data_label.groupby(["label"]).agg(count_outliers = ("outliers", "sum"), 
+                                                    count_not_outliers = ("without_outliers", "sum")).reset_index()
+
+        return data_label
 
     # Modulo: Computo de tiempos sobre un proceso
     def get_time_process(self, seg):
