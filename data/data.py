@@ -3,6 +3,7 @@ import numpy as np
 
 class Queries():
     
+    # Modulo: Constructor
     def __init__(self, path, test):
         self.path = path
         self.test = test
@@ -35,7 +36,7 @@ class Queries():
             print("\n >> Proceso de guardado (Archivo)")
             name_file = input("\n Ingrese el nombre del archivo: ")
             while True:
-                validate = input(' Nombre del archivo es correcto (y / n): ')
+                validate = input('\n Nombre del archivo es correcto (y / n): ')
                 if validate.lower() == "y":
                     break
                 
@@ -43,7 +44,7 @@ class Queries():
                     print("\n > Opcion invalida. Seleccione: y -> si o n -> no !!! \n")
                     
                 elif validate.lower() == "n":
-                    name_file = input(" Ingrese el nombre del archivo: ")
+                    name_file = input("\n Ingrese el nombre del archivo: ")
 
             path = self.path + "result/"
             data.to_csv(path + name_file + ".csv", index = False)

@@ -2,6 +2,10 @@ import pandas as pd
 import numpy as np
 import os
 import sys
+from time import time
+import traceback
+
+# Importacion de clases
 from data.data import Queries
 #from connection.connect import Conexion
 from bussines.functions import Functions
@@ -18,8 +22,11 @@ pd.options.mode.chained_assignment = None
 
 class Main_Series_Times():
     
-    def __init__(self, path):
-        self.path = path
+    # Modulo: Constructor
+    def __init__(self):
+        #path = "C:/Softtek/demanda_pronostico/source/"
+        BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.path = BASE_DIR + "/demanda_pronostico/source/"
 
     # Modulo: Determinacion de variables para el analisis de patrones de demanda para determinar el grado la facilidad de prediccion o clasificacion de patrones
     def select_options(self):        
@@ -37,6 +44,8 @@ class Main_Series_Times():
             elif validate.lower() == "n":
                 name_file = self.functions.select_file()
                 print("\n >> Archivo seleccionado: {}\n".format(name_file.split(".")[0]))
+
+        print("+*+*"*30)
 
         # Extraccion de datos
         data = self.queries.get_data_file(name_file)
@@ -58,6 +67,8 @@ class Main_Series_Times():
                 variables, columns = self.functions.select_variables_data(data)
                 print("\n >> Columnas seleccionadas: {}\n".format(str(variables).replace("[", "").replace("]", "")))
 
+        print("+*+*"*30)
+
         # Seleccion del periodo analizar (Semanal o Mensual)
         period = self.functions.select_period()
         print(" >> Periodo seleccionado: {}\n".format(period))
@@ -72,6 +83,8 @@ class Main_Series_Times():
             elif validate.lower() == "n":
                 period = self.functions.select_period()
                 print(" >> Periodo seleccionado: {}\n".format(period))
+
+        print("+*+*"*30)
 
         # Seleccion de las variables de series de tiempo (Tiempo y Observacion)
         col_serie = self.functions.select_var_series(data)
@@ -88,6 +101,8 @@ class Main_Series_Times():
                 col_serie = self.functions.select_var_series(data)
                 print(" >> Variables analisis de tiempo: {}\n".format(str(col_serie).replace("[", "").replace("]", "")))
         
+        print("+*+*"*30)
+
         # Seleccion de las variables para filtrar la granularidad de los datos
         col_gran = self.functions.select_gran_data(data)
         print(" >> Granularidad seleccionada: {}\n".format(str(col_gran).replace("[", "").replace("]", "")))
@@ -102,12 +117,14 @@ class Main_Series_Times():
             elif validate.lower() == "n":
                 col_gran = self.functions.select_gran_data(data)
                 print(" >> Granularidad seleccionada: {}\n".format(str(col_gran).replace("[", "").replace("]", "")))
+
+        print("+*+*"*30)
                 
         return data, period, col_serie, col_gran
 
     # Modulo: Analisis y generacion de los patrones de demanda para la viabilidad de clasificacion de observaciones
     def data_demand(self, data, period, col_serie, col_gran):
-        print(" >> DataFrame: Sales <<<\n")
+        print("\n >> DataFrame: Sales <<<\n")
         data[col_serie[0]] = pd.to_datetime(data[col_serie[0]])
         data['year'] = data[col_serie[0]].dt.year
         print(data.head())
@@ -154,27 +171,46 @@ class Main_Series_Times():
                 print("\n >>> DataFrame: Contador de Series por granularidad <<<\n")
                 col = columns[:-1]
                 #col.insert(len(columns), "year")
-                col.insert(0, "year")
+                # Eliminacion debido a la iteracion por año
+                #col.insert(0, "year")
                 #print(col)
                 grouped = df.groupby(col)
                 label = []
                 count = []
+                outliers = []
+                not_outliers = []
                 for idx, group in grouped:
-                    #print(idx)
-                    for col_name in group[col[1:]]:
+                    print(idx)
+                    #for col_name in group[col[1:]]:
+                    for col_name in group[col]:
                         group[col_name] = group[col_name].astype(str)
 
                     group['month'] = group[col_serie[0]].dt.month
                     #group["label"] = group[col[:-1]].apply("_".join, axis=1)
-                    group["label"] = group[col[1:]].apply("_".join, axis = 1)
+                    #group["label"] = group[col[1:]].apply("_".join, axis = 1)
+                    group["label"] = group[col].apply("_".join, axis = 1)
+                    
+                    # Proceso: Identificacion de valores atipicos en base a la granularidad
+                    #name_graph = col[1] + "_" + str(list(idx)[1])
+                    name_graph = col[0] + "_" + str(list(idx)[0]) + "_" + str(year)
+                    outliers_index, without_outliers_index = self.functions.get_outliers(group, col_obs = col_serie[1], col_name = name_graph)
+                    print('\n >> # Outliers:', len(outliers_index))
+                    print(' >> # Without Outliers: {} \n'.format(len(without_outliers_index)))
+
                     #label.append(str(list(idx)[:-1]).replace("[", "").replace("]", ""))
                     label.extend(group.label.unique().tolist())
                     count.append(len(group.month.unique().tolist()))
+                    outliers.append(len(outliers_index))
+                    not_outliers.append(len(without_outliers_index))
                     
                 data_label = pd.DataFrame()
                 data_label["label"] = label
                 data_label["count_month"] = count
-                data_label = data_label.groupby(["label"]).agg(months = ("count_month", 'sum')).reset_index()
+                data_label["outliers"] = outliers
+                data_label["without_outliers"] = not_outliers
+                #data_label = data_label.groupby(["label"]).agg(months = ("count_month", 'sum')).reset_index()
+                data_label = data_label.groupby(["label"]).agg(months = ("count_month", 'sum'), count_outliers = ("outliers", "sum"), 
+                                                            count_not_outliers = ("without_outliers", "sum")).reset_index()
                 print(data_label.head())
                 print("---"*20)
                 
@@ -194,7 +230,7 @@ class Main_Series_Times():
                 print("---"*20)
 
                 # Proceso: Union de los analisis del ADI y CV2
-                print("\n >>> DataFrame: Final\n")
+                print("\n >>> DataFrame: Analisis Finalizada - ({}) \n".format(col[0]))
                 df = pd.merge(adi_data[["label", "adi"]], cv_data[["label", "cv", "cv2"]], how = "left", on = ["label"])
 
                 # Proceso: Clasificacion del tipo de categoria sobre el intervalo de demanda por ADI y CV2
@@ -207,65 +243,77 @@ class Main_Series_Times():
                 metric_name = str(year) + " - " + ' - '.join(columns)
                 data_frame_metric[metric_name] = df
                 
+                #break
+            #break
+                
         return data_frame_metric
 
     def main(self):
         # Bandera de prueba
-        test = True
+        test = False
+        try:
+            start_time = time()
         
-        # Incializacion de clases (Metodo Contructor)
-        self.queries = Queries(path, test)
-        self.functions = Functions(path, test)
+            # Incializacion de clases (Metodo Contructor)
+            self.queries = Queries(self.path, test)
+            self.functions = Functions(self.path, test)
 
-        # Seleccion del tipo de fuente para la extraccion de los datos
-        source_data = self.functions.select_source_data()
-        # Extraccion de datos por archivo y seleccion de variables analizar
-        if source_data == 1:
-            data, period, col_serie, col_gran = self.select_options()
+            # Seleccion del tipo de fuente para la extraccion de los datos
+            source_data = self.functions.select_source_data()
+            # Extraccion de datos por archivo y seleccion de variables analizar
+            if source_data == 1:
+                data, period, col_serie, col_gran = self.select_options()
 
-        # Extraccion de datos por base de datos (Fijar las variables analizar, si no aplicar el modulo "select_options")
-        elif source_data == 2:
-            data = self.queries.get_data_netezza()
-            
-        else:
-            print(" >>> Error: Seleccion de fuente incorrecta !!!\n")
-            sys.exit()
+            # Extraccion de datos por base de datos (Fijar las variables analizar, si no aplicar el modulo "select_options")
+            elif source_data == 2:
+                data = self.queries.get_data_netezza()
+                
+            else:
+                print(" >>> Error: Seleccion de fuente incorrecta !!!\n")
+                sys.exit()
 
-        # Proceso: Clasificación de los patrones de demanda
-        data_frame_metric = self.data_demand(data, period, col_serie, col_gran)
+            # Proceso: Clasificación de los patrones de demanda
+            data_frame_metric = self.data_demand(data, period, col_serie, col_gran)
 
-        # Proceso: Generacion de la estractura final del dataframe clasificacion en base a demanda
-        print("\n >>> Dataframe: Demand Classifier <<< \n")
-        data_final = self.functions.get_demand_classifier(data_frame_metric)
-        print(data_final.head(30))
-        print(" > Volumen: ", data_final.shape)
-        print("---"*20)
+            # Proceso: Generacion de la estractura final del dataframe clasificacion en base a demanda
+            print("\n >>> Dataframe: Demand Classifier <<< \n")
+            data_final = self.functions.get_demand_classifier(data_frame_metric)
+            print(data_final.head(30))
+            print("\n > Volumen: ", data_final.shape)
+            print("---"*20)
 
-        # Guardado del analisis - Dataframe intervalos de demanda
-        if source_data == 1:
-            self.queries.save_data_file(data_final)
-            
-        else:
-            self.queries.save_data_bd(data_final)
-        print("---"*20)
+            # Guardado del analisis - Dataframe intervalos de demanda
+            if source_data == 1:
+                self.functions.validate_path(name_folder = "result/")
+                self.queries.save_data_file(data_final)
+                
+            else:
+                self.queries.save_data_bd(data_final)
+            print("---"*20)
 
-        # Proceso: Obtencion de los porcentajes por categoria
-        print("\n >>> Dataframe: Detail Classifier <<< \n")
-        detail_data_gran = self.functions.get_detail_demand(data_final)
-        print(detail_data_gran)
-        print("---"*20)
+            # Proceso: Obtencion de los porcentajes por categoria
+            print("\n >>> Dataframe: Detail Classifier <<< \n")
+            detail_data_gran = self.functions.get_detail_demand(data_final)
+            print(detail_data_gran)
+            print("---"*20)
 
-        # Guardado del analisis - Dataframe detail
-        if source_data == 1:
-            self.queries.save_data_file(data_final)
-            
-        else:
-            self.queries.save_data_bd(data_final)
-        print("---"*20)
+            # Guardado del analisis - Dataframe detail
+            if source_data == 1:
+                self.functions.validate_path(name_folder = "result/")
+                self.queries.save_data_file(data_final)
+                
+            else:
+                self.queries.save_data_bd(data_final)
+            print("---"*20)
+
+            end_time = time()
+            print('\n >>>> El analisis tardo <<<<')
+            self.functions.get_time_process(round(end_time - start_time, 2))
+
+        except Exception as e:
+            print(traceback.format_exc())
         
 if __name__ == "__main__":
-    path = "C:/Softtek/timeseries/source/"
-
     # Proceso de analisis
-    series = Main_Series_Times(path)
+    series = Main_Series_Times()
     series.main()

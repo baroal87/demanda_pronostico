@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import os
 import sys
 from os import listdir
 from os.path import isfile, join
@@ -9,10 +10,34 @@ import matplotlib.pyplot as plt
 
 class Functions():
     
+    # Modulo: Constructor
     def __init__(self, path, test):
         self.path = path
         self.test = test
     
+    # Modulo: Verificacion de carpeta de resultados
+    def validate_path(self, name_folder):
+        if not self.test:
+            path = self.path + name_folder
+            # Validacion de existencia
+            if os.path.exists(path):
+                print("\n > Verificacion de direccion de almacenamiento: correcta !!!")
+            
+            # Geenracion de la carpeta result
+            else:
+                print("\n > Verificacion de direccion de almacenamiento: No existe !!!")
+                print("\n >> Procedimiento de generacion de carpeta para almacenamiento")
+                os.mkdir(path)
+
+                # Verificacion de la carpeta
+                if os.path.exists(path):
+                    print(" >> La carpeta fue creada correctamente")
+                    
+                else:
+                    print(" >> Error: No se creo la carpeta en la ruta \'{}\' -> {} !!!".format(name_folder, self.path))
+                    sys.exit()
+            print("---"*20)
+
     # Modulo: Extraccion de los archivos dentro de una direccion
     def get_files_names(self):
         return [file for file in listdir(self.path) if (isfile(join(self.path, file))) & (file.endswith('.csv'))]
@@ -40,7 +65,7 @@ class Functions():
                     print("\n Opcion invalida !! \n")
                     
             except:
-                print("\n >> Error: Ingrese un valor numerico !!! ")
+                print("\n >> Error: Ingrese un valor numerico !!! \n")
 
         print("---"*20)
 
@@ -59,7 +84,7 @@ class Functions():
                     print("\n Opcion invalida !! \n")
 
             except:
-                print("\n >> Error: Ingrese un valor numerico !!! ")
+                print("\n >> Error: Ingrese un valor numerico !!! \n")
 
         print("---"*20)
 
@@ -96,7 +121,7 @@ class Functions():
                     list_col.append(x)
 
             except:
-                print("\n >> Error: Ingrese un valor numerico !!! ")
+                print("\n >> Error: Ingrese un valor numerico !!! \n")
 
         col_name = []
         for index in list_col:
@@ -128,7 +153,7 @@ class Functions():
                     print("\n Opcion invalida !! \n")
 
             except:
-                print("\n >> Error: Ingrese un valor numerico !!! ")
+                print("\n >> Error: Ingrese un valor numerico !!! \n")
 
         print("---"*20)
 
@@ -155,7 +180,7 @@ class Functions():
                     break
 
             except:
-                print("\n >> Error: Ingrese un valor numerico !!! ")
+                print("\n >> Error: Ingrese un valor numerico !!! \n")
 
         while True:
             try:
@@ -168,7 +193,7 @@ class Functions():
                     break
 
             except:
-                print("\n >> Error: Ingrese un valor numerico !!! ")
+                print("\n >> Error: Ingrese un valor numerico !!! \n")
 
         col_serie = []
         for index in col_name:
@@ -203,7 +228,7 @@ class Functions():
                     col_name.append(x)
 
             except:
-                print("\n >> Error: Ingrese un valor numerico !!! ")
+                print("\n >> Error: Ingrese un valor numerico !!! \n")
 
         col_gran = []
         for index in col_name:
@@ -299,6 +324,8 @@ class Functions():
             temp["granularity"] = key
             temp["year"] = temp.granularity.str.split(" ", expand = True)[0]
             data_final = pd.concat([data_final, temp], axis = 0, ignore_index = False)
+    
+        data_final = data_final.reset_index()
             
         return data_final
     
@@ -330,28 +357,62 @@ class Functions():
         return detail_data_gran
     
     # Modulo: Identificacion de outliers (ruido o datos atipicos)
-    def get_outliers(self, data, col_pred, threshold = 3):
-        values = data[col_pred]
+    def get_outliers(self, data, col_obs, col_name, threshold = 3):
+        values = data[col_obs]
         # Handling outliers with a z-score threshold
         z_scores = np.abs(stats.zscore(values))
 
         # Adjust the threshold as needed
-        filtered_data = values[z_scores < threshold]
+        filtered_data = values[z_scores <= threshold]
+        outliers_data = values[z_scores > threshold]
 
         without_outliers = np.where(np.abs(z_scores) <= threshold)[0]
         outliers = np.where(np.abs(z_scores) > threshold)[0]
 
         # Plot the filtered data without outliers
-        #"""
-        plt.figure(figsize = (8, 4))
-        plt.scatter(range(len(filtered_data)), filtered_data, label = 'Filtered Data')
-        plt.xlabel('Data Point')
-        plt.ylabel('Sale')
-        plt.title('Filtered Data (Outliers Removed)')
-        plt.legend()
+        if not self.test:
+            plt.figure(figsize = (8, 4))
+            plt.scatter(range(len(filtered_data)), filtered_data, label = 'Filtered Data')
+            plt.scatter(range(len(outliers_data)), outliers_data, label = 'Outlier Data')
+            plt.xlabel('Data Points')
+            plt.ylabel(col_obs)
+            plt.title('Filtered Data (Outliers Removed)')
+            plt.legend()
 
-        plt.savefig('plot.png', dpi=300, bbox_inches='tight')
-        plt.show()
-        #"""
+            print("\n >> Proceso de guardado (Grafica)")            
+            name_folder = "graphics/"
+            self.validate_path(name_folder)
+            name_file = col_name + "_grap_outlier"
+            plt.savefig(self.path + name_folder + name_file + '.png', dpi = 400, bbox_inches = 'tight')
+            plt.close()
+            #plt.show()
         
         return outliers, without_outliers
+
+    # Modulo: Computo de tiempos sobre un proceso
+    def get_time_process(self, seg):
+        if seg < 60:
+            print(" >>> Tiempo: {} seg.".format(seg))
+
+        elif (seg >= 60) & (seg < 3600):
+            minutes = int(seg / 60)
+            seg = int(seg % 60)
+            if seg == 0:
+                print(" >>> Tiempo: {} min.".format(minutes))
+
+            else:
+                print(" >>> Tiempo: {} min - {} seg.".format(minutes, seg))
+
+        elif seg >= 3600:
+            hour = int(seg / 3600)
+            minutes = int( (seg - (hour * 3600)) / 60)
+            seg = int(seg - ((hour * 3600) - (minutes * 60)) )
+
+            if (minutes == 0) & ((seg == 0) | (seg != 0)):
+                print(" >>> Tiempo: {} hr(s).".format(hour))
+
+            elif (minutes != 0) & (seg == 0):
+                print(" >>> Tiempo: {} h - {} min.".format(hour, minutes))
+
+            else:
+                print(" >>> Tiempo: {} h - {} min - {} seg.".format(hour, minutes, seg))
