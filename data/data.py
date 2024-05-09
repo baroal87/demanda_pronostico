@@ -1,5 +1,9 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
+
 import pandas as pd
 import numpy as np
+from pandas import ExcelWriter
 
 class Queries():
     
@@ -15,7 +19,7 @@ class Queries():
     # Modulo: Extraccion de datos por archivo
     def get_data_file(self, name_file):
         # Carga y extraccion de datos
-        data = pd.read_csv(self.path + name_file)
+        data = pd.read_csv(self.path + name_file, low_memory = False)
 
         return data
 
@@ -31,9 +35,10 @@ class Queries():
         return data
 
     # Modulo: Determinacion del nombre y guardado del dataframe resultante (Archivo)
-    def save_data_file(self, data, name_folder):
+    def save_data_file_csv(self, data, name_folder, name_file):
         if not self.test:
-            print("\n >> Proceso de guardado (Archivo)")
+            """
+            print("\n >> Proceso de guardado (Archivo - CSV)")
             name_file = input("\n Ingrese el nombre del archivo: ")
             while True:
                 validate = input('\n Nombre del archivo es correcto (y / n): ')
@@ -46,11 +51,35 @@ class Queries():
                 elif validate.lower() == "n":
                     name_file = input("\n Ingrese el nombre del archivo: ")
 
+            """
             #path = self.path + "result/"
             path = self.path + name_folder
             data.to_csv(path + name_file + ".csv", index = False)
             print(" >> Archivo Guardado correctamente")
-            
+
+    # Modulo: Guardado de un archivo excel
+    def save_data_file_excel(self, data_demand, data_detail, name_folder):
+        if not self.test:
+            print("\n >> Proceso de guardado (Archivo - Excel)")
+            name_file = input("\n Ingrese el nombre del archivo: ")
+            while True:
+                validate = input('\n Nombre del archivo es correcto (y / n): ')
+                if validate.lower() == "y":
+                    break
+                
+                elif (validate.lower() != "y") & (validate.lower() != "n"):
+                    print("\n > Opcion invalida. Seleccione: y -> si o n -> no !!! \n")
+                    
+                elif validate.lower() == "n":
+                    name_file = input("\n Ingrese el nombre del archivo: ")
+
+            path = self.path + name_folder
+            with pd.ExcelWriter(path + name_file + ".xlsx", engine = "openpyxl") as writer:
+                data_demand.to_excel(writer, sheet_name = 'demand_classifier', index = False)
+                data_detail.to_excel(writer, sheet_name = 'demand_detail', index = False)
+
+            print(" >> Archivo Guardado correctamente")
+
     # Modulo: Determinacion del nombre y guardado del dataframe resultante (BD)
     def save_data_bd(self, data):
         if not self.test:

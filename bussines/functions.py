@@ -1,9 +1,14 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
+
 import pandas as pd
 import numpy as np
 import os
 import sys
 from os import listdir
 from os.path import isfile, join
+
+import math
 
 from scipy import stats
 import matplotlib.pyplot as plt
@@ -271,50 +276,78 @@ class Functions():
         return cv_data
     
     # Modulo: Analisis y computo del intervalo medio de demanda - ADI
-    def get_ADI(self, data, columns):
+    def get_ADI(self, data, columns, col_obs, col_time, period):
+        date = data.groupby(columns[:-1]).agg(start = (col_time, 'min'), end = (col_time, 'max')).reset_index()
+        for col in date[columns[:-1]]:
+            date[col] = date[col].astype(str)
+
+        if period == "month":
+            date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'M')
+            date.period = date.period.apply(lambda x: math.ceil(x))
+
+        else:
+            date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'W')
+            date.period = date.period.apply(lambda x: int(round(x, 0)))
+
+        date["label"] = date[columns[:-1]].apply("_".join, axis = 1)
+        print(date.head())
+        print("---"*20)
+        #print(date[date.label.isin(["1111", "4922"])])
+        #print("---"*20)
+
         #ADI = round(data.Period.count() / data[data.Demand.notnull()].Demand.count(), 2)
         # Calcular la demanda (count) por fecha -> dia, mes o año por cada valor de la columna analizar
-        data_retail = data.groupby(columns).agg(demand = (columns[0], 'count')).reset_index()
+        #data_retail = data.groupby(columns).agg(demand = (columns[0], 'count')).reset_index()
+        columns.insert(len(columns), "year")
+        data_retail = data.groupby(columns).agg(demand = (col_obs, 'count')).reset_index()
         for col in data_retail[columns[:-1]]:
             data_retail[col] = data_retail[col].astype(str)
 
+        columns.remove("year")
         # Definicion de la etiqueta en base a la granularidad de las variables seleccionadas
         data_retail["label"] = data_retail[columns[:-1]].apply("_".join, axis = 1)
-
         #print(data_retail.head())
         #print("---"*20)
 
         # Extraccion del periodo por valor de la columna analizar
         adi_data = data_retail.label.value_counts().reset_index()
+        adi_data.rename(columns = {"count": "demand"}, inplace = True)
         #print(adi_data.head())
         #print("---"*20)
+        #print(adi_data[adi_data.label.isin(["1111", "4922"])])
         
         # Extraccion del contador por demanda y valor de la columna analizar
-        adi_data["demand"] = [data_retail[(data_retail.demand.notnull()) & (data_retail.label == col)].demand.count() for col in adi_data.label.unique().tolist()]
-        adi_data["adi"] = round(adi_data["count"] / adi_data.demand, 4)
-        #print(adi_data)
-        #print("---"*20)
+        adi_data = pd.merge(adi_data, date[["label", "period"]], how = "left", on = ["label"])
         
+        ##adi_data["demand"] = [data_retail[(data_retail.demand.notnull()) & (data_retail.label == col)].demand.count() for col in adi_data.label.unique().tolist()]
+        #adi_data["adi"] = round(adi_data["count"] / adi_data.demand, 4)
+        adi_data["adi"] = round(adi_data.period / adi_data.demand, 1)
+        #print(adi_data.head())
+
         return adi_data
     
     # Modulo: Catalogacion para determinar la dificultad de prediccion o clasificacion de patrones
     def get_category(self, df):
         # Predicciones sencillas
-        if (df.adi <= 1.34) & (df.cv2 <= 0.49):
-            return 'Smooth'
+        if (df.adi < 1.32) & (df.cv2 < 0.49):
+            #print(" >> smooth <<")
+            return 'smooth'
+
+        # Predicciones dificiles
+        elif (df.adi >= 1.32) & (df.cv2 < 0.49):
+            #print(" >> Intermittent <<")
+            return 'intermittent'
+
+        # Predicciones dificiles
+        elif (df.adi < 1.32) & (df.cv2 >= 0.49):
+            #print(" >> Erratic <<")
+            return 'erratic'
 
         # Predicciones complejas
-        if (df.adi >= 1.34) & (df.cv2 >= 0.49):
-            return 'Lumpy'
+        elif (df.adi >= 1.32) & (df.cv2 >= 0.49):
+            #print(" >> Lumpy <<")
+            return 'lumpy'
 
-        # Predicciones dificiles
-        if (df.adi < 1.34) & (df.cv2 > 0.49):
-            return 'Erratic'
-
-        # Predicciones dificiles
-        if (df.adi > 1.34) & (df.cv2 < 0.49):
-            return 'Intermittent'
-        
     # Modulo: Generacion de las metricas del analisis de los intervalos de demanda
     def get_demand_classifier(self, data_frame_metric):
         data_final = pd.DataFrame()
@@ -416,7 +449,8 @@ class Functions():
         
         return outliers, without_outliers
 
-    def get_count_series(self, data, columns_gran, col_time):
+    # Modulo: Computo de series (observaciones) en base a la granularidad de los datos y periodo de analisis
+    def get_count_series(self, data, columns_gran, col_time, period = "month"):
         grouped = data.groupby(columns_gran)
         label = []
         count = []
@@ -426,22 +460,30 @@ class Functions():
             for col_name in group[columns_gran[1:]]:
                 group[col_name] = group[col_name].astype(str)
 
-            group['month'] = group[col_time].dt.month
+            if period == "month":
+                group['month'] = group[col_time].dt.month
+                count.append(len(group.month.unique().tolist()))
+
+            else:
+                group['week'] = group[col_time].dt.isocalendar().week
+                count.append(len(group.week.unique().tolist()))
+
             #group["label"] = group[columns_gran[:-1]].apply("_".join, axis=1)
             group["label"] = group[columns_gran[1:]].apply("_".join, axis = 1)
-            
             #label.append(str(list(idx)[:-1]).replace("[", "").replace("]", ""))
             label.extend(group.label.unique().tolist())
-            count.append(len(group.month.unique().tolist()))
-            
-            
+
         data_label = pd.DataFrame()
         data_label["label"] = label
-        data_label["count_month"] = count
-        data_label = data_label.groupby(["label"]).agg(months = ("count_month", 'sum')).reset_index()
+        name_col = "count_" + str(period)
+        data_label[name_col] = count
+        #data_label = data_label.groupby(["label"]).agg(months = ("count_month", 'sum')).reset_index()
+        data_label = data_label.groupby(["label"]).agg({name_col: 'sum'}).reset_index()
+        data_label.rename(columns = {name_col: period}, inplace = True)
 
         return data_label
 
+    # Modulo: Computo de valores atipicos en base a la granularidad de los datos, año y periodo de analisis
     def get_count_outliers(self, data, columns_gran, col_time, name_file, period, year):
         grouped = data.groupby(columns_gran)
         label = []
