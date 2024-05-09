@@ -174,28 +174,54 @@ class Functions():
         print()
         col_name = []
         total = len(columns)
+        formats = ["%d-%m-%Y", "%d/%m/%Y", "%m-%d-%Y", "%m/%d/%Y", "%Y-%m-%d", "%Y/%m/%d"]
+
+        # Proceso: Validacion de tipo formato y seleccion de variable (tiempo)
         while True:
             try:
-                x = int(input('Ingrese numero de columna (Tiempo): '))    
+                x = int(input('Ingrese numero de columna (Tiempo): '))                
+                for idx, format in enumerate(formats):
+                    try:
+                        if idx <= 1:
+                            data[columns[x - 1]] = pd.to_datetime(data[columns[x - 1]], format = format, dayfirst = True)
+                            
+                        else:
+                            data[columns[x - 1]] = pd.to_datetime(data[columns[x - 1]], format = format)
+
+                        flag = True
+                        break       
+
+                    except Exception as e:
+                        #print(e)
+                        flag = False
+
                 if (x < 1) | (x > total):
                     print("\n Indice incorrecto !!! \n")
 
-                else:
+                elif flag:
                     col_name.append(x)
                     break
+
+                else:
+                    print("\n >>> Error: Variable seleccionada no contiene un formato tipo: \'Date\' !!! \n")
 
             except:
                 print("\n >> Error: Ingrese un valor numerico !!! \n")
 
+        # Proceso: Validacion de tipo formato y seleccion de variable (observacion)
         while True:
             try:
-                x = int(input('Ingrese numero de columna (Observacion): '))    
+                x = int(input('Ingrese numero de columna (Observacion): '))
+                type = data[columns[x - 1]].dtype
                 if (x < 1) | (x > total):
                     print("\n Indice incorrecto !!! \n")
 
-                else:
+                if (type == "int64") | (type == "int") | (type == "float64") | (type == "float"):
                     col_name.append(x)
                     break
+
+                else:
+                    print("\n >>> Error: Variable seleccionado no contiene un formato tipo: \'Numerico\' !!! \n")
 
             except:
                 print("\n >> Error: Ingrese un valor numerico !!! \n")

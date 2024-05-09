@@ -52,6 +52,8 @@ class Main_Demand_Series_Times():
 
         # Extraccion de datos
         data = self.queries.get_data_file(name_file)
+        print(data.head())
+        print("*+*+"*30)
 
         # Seleccion y filtracion de las variables analizar del conjunto de datos de entrada
         variables, columns = self.functions.select_variables_data(data)
@@ -128,12 +130,12 @@ class Main_Demand_Series_Times():
     # Modulo: Analisis y generacion de los patrones de demanda para la viabilidad de clasificacion de observaciones
     def data_demand(self, data, period, col_serie, col_gran, name_file):
         print("\n >> DataFrame: Sales <<<\n")
-        try:
-            data[col_serie[0]] = pd.to_datetime(data[col_serie[0]], format = "%Y-%m-%d")
+        #try:
+        #    data[col_serie[0]] = pd.to_datetime(data[col_serie[0]], format = "%Y-%m-%d")
             
-        except:
-            data[col_serie[0]] = data[col_serie[0]].apply(lambda x: pd.to_datetime(x).strftime("%Y-%m-%d"))
-            data[col_serie[0]] = pd.to_datetime(data[col_serie[0]], format = "%Y-%m-%d")
+        #except:
+        #    data[col_serie[0]] = data[col_serie[0]].apply(lambda x: pd.to_datetime(x).strftime("%Y-%m-%d"))
+        #    data[col_serie[0]] = pd.to_datetime(data[col_serie[0]], format = "%Y-%m-%d")
 
         data = data[data[col_serie[1]] > 0]
         data['year'] = data[col_serie[0]].dt.year
@@ -229,7 +231,6 @@ class Main_Demand_Series_Times():
             self.queries = Queries(self.path, test)
             self.functions = Functions(self.path, test)
 
-            #"""
             # Seleccion del tipo de fuente para la extraccion de los datos
             source_data = self.functions.select_source_data()
             # Extraccion de datos por archivo y seleccion de variables analizar
@@ -249,23 +250,6 @@ class Main_Demand_Series_Times():
             else:
                 print(" >>> Error: Seleccion de fuente incorrecta !!!\n")
                 sys.exit()
-
-            #"""
-            #period = "month"
-            #period = "week"
-            #col_serie = ['fecha', 'sales']
-            #col_gran = ['store_nbr']
-            #name_file = "data_Atom_agu.csv"
-            #data = self.queries.get_data_file(name_file)
-            #print(data.head())
-            
-            temp = {"formato": [5, 5], "store_nbr": [1111, 1111], "dept_nbr": [94, 94], "old_nbr": [123345, 123345],
-            "item_nbr": [54321, 23455], "price": [40.5, 30.2], "semana_wm": [12027, 12054], 
-            "fecha": ["2022-03-01", "2023-12-20"], "sales": [30.0, 23.0]}
-
-            temp = pd.DataFrame(temp)
-            #print(temp)
-            data = pd.concat([data, temp], axis = 0, ignore_index = False)
 
             # Proceso: Clasificación de los patrones de demanda
             data_frame_metric = self.data_demand(data, period, col_serie, col_gran, name_file)
