@@ -277,34 +277,13 @@ class Main_Demand_Series_Times():
             print("\n > Volumen: ", data_final.shape)
             print("---"*20)
 
-            # Guardado del analisis - Dataframe intervalos de demanda
-            if source_data == 1:
-                # Validacion de la carpeta principal
-                name_folder = "result/"
-                self.functions.validate_path(name_folder)
-
-                # Validacion de subcarpetas - nombre del archivo
-                name_folder = name_folder + name_file + "/"
-                self.functions.validate_path(name_folder)
-
-                # Validacion de subcarpetas - periodo analisis (Semanal o Mensual)
-                name_folder = name_folder + period + "/"
-                self.functions.validate_path(name_folder)
-
-                # Proceso: Guardado de archivo csv
-                self.queries.save_data_file_csv(data_final, name_folder, name_file = name_file + "_final")
-
-            else:
-                self.queries.save_data_bd(data_final)
-            print("---"*20)
-
             # Proceso: Obtencion de los porcentajes por categoria
             print("\n >>> Dataframe: Detail Classifier <<< \n")
             detail_data_gran = self.functions.get_detail_demand(data_final)
             print(detail_data_gran.head(20))
             print("---"*20)
 
-            # Guardado del analisis - Dataframe detail
+            # Guardado del analisis - Dataframe intervalos de demanda & Dataframe detail
             if source_data == 1:
                 # Validacion de la carpeta principal
                 name_folder = "result/"
@@ -318,9 +297,11 @@ class Main_Demand_Series_Times():
                 name_folder = name_folder + period + "/"
                 self.functions.validate_path(name_folder)
 
-                #self.functions.validate_path(name_folder = "result/")
-                # Proceso: Guardado de archivo csv
-                self.queries.save_data_file_csv(data_final, name_folder, name_file = name_file + "_detail")
+                # Proceso: Guardado de archivo csv - final
+                self.queries.save_data_file_csv(data_final, name_folder, name_file = name_file + "_final")
+
+                # Proceso: Guardado de archivo csv - detail
+                self.queries.save_data_file_csv(detail_data_gran, name_folder, name_file = name_file + "_detail")
 
                 # Proceso: Guardado de archivo excel
                 self.queries.save_data_file_excel(data_final, detail_data_gran, name_folder)
