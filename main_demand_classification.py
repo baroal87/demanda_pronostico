@@ -1,3 +1,6 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
+
 import pandas as pd
 import numpy as np
 import os
@@ -20,7 +23,7 @@ os.environ["PYTHONIOENCODING"] = "utf-8"
 pd.set_option('display.max_columns', None)
 pd.options.mode.chained_assignment = None
 
-class Main_Series_Times():
+class Main_Demand_Series_Times():
     
     # Modulo: Constructor
     def __init__(self):
@@ -29,7 +32,7 @@ class Main_Series_Times():
         self.path = BASE_DIR + "/demanda_pronostico/source/"
 
     # Modulo: Determinacion de variables para el analisis de patrones de demanda para determinar el grado la facilidad de prediccion o clasificacion de patrones
-    def select_options(self):        
+    def select_options(self):
         # Seleccion del archivo analizar
         name_file = self.functions.select_file()
         print("\n >> Archivo seleccionado: {}\n".format(name_file.split(".")[0]))
@@ -176,7 +179,7 @@ class Main_Series_Times():
                 # Eliminacion debido a la iteracion por año
                 col.insert(0, "year")
                 #print(col)
-                data_label = self.functions.get_count_series(df, columns_gran = col, col_time = col_serie[0])
+                data_label = self.functions.get_count_series(df, columns_gran = col, col_time = col_serie[0], period = period)
                 data_label = pd.merge(data_label, self.functions.get_count_outliers(df, columns_gran = col[1:], col_time = col_serie[1], name_file = name_file, period = period, year = year), 
                                       how = "left", on = ["label"])
                 print(data_label.head())
@@ -187,7 +190,7 @@ class Main_Series_Times():
                 columns = columns[:-1]
                 columns.insert(len(columns), period)
                 #print(columns)
-                adi_data = self.functions.get_ADI(df, columns = columns)
+                adi_data = self.functions.get_ADI(df, columns = columns, col_obs = col_serie[1], col_time = col_serie[0], period = period)
                 print(adi_data.head())
                 print("---"*20)
 
@@ -204,7 +207,7 @@ class Main_Series_Times():
                 # Proceso: Clasificacion del tipo de categoria sobre el intervalo de demanda por ADI y CV2
                 df["category"] = df.apply(self.functions.get_category, axis = 1)
                 df = pd.merge(df, data_label, how = "left", on = ["label"])
-                print(df.head(20))
+                print(df.head())
                 print("+++"*30)
 
                 columns = columns[:-1]
@@ -226,6 +229,7 @@ class Main_Series_Times():
             self.queries = Queries(self.path, test)
             self.functions = Functions(self.path, test)
 
+            #"""
             # Seleccion del tipo de fuente para la extraccion de los datos
             source_data = self.functions.select_source_data()
             # Extraccion de datos por archivo y seleccion de variables analizar
@@ -246,43 +250,40 @@ class Main_Series_Times():
                 print(" >>> Error: Seleccion de fuente incorrecta !!!\n")
                 sys.exit()
 
+            #"""
+            #period = "month"
+            #period = "week"
+            #col_serie = ['fecha', 'sales']
+            #col_gran = ['store_nbr']
+            #name_file = "data_Atom_agu.csv"
+            #data = self.queries.get_data_file(name_file)
+            #print(data.head())
+            
+            temp = {"formato": [5, 5], "store_nbr": [1111, 1111], "dept_nbr": [94, 94], "old_nbr": [123345, 123345],
+            "item_nbr": [54321, 23455], "price": [40.5, 30.2], "semana_wm": [12027, 12054], 
+            "fecha": ["2022-03-01", "2023-12-20"], "sales": [30.0, 23.0]}
+
+            temp = pd.DataFrame(temp)
+            #print(temp)
+            data = pd.concat([data, temp], axis = 0, ignore_index = False)
+
             # Proceso: Clasificación de los patrones de demanda
             data_frame_metric = self.data_demand(data, period, col_serie, col_gran, name_file)
 
             # Proceso: Generacion de la estractura final del dataframe clasificacion en base a demanda
             print("\n >>> Dataframe: Demand Classifier <<< \n")
             data_final = self.functions.get_demand_classifier(data_frame_metric)
-            print(data_final.head(30))
+            print(data_final.head())
             print("\n > Volumen: ", data_final.shape)
-            print("---"*20)
-
-            # Guardado del analisis - Dataframe intervalos de demanda
-            if source_data == 1:
-                # Validacion de la carpeta principal
-                name_folder = "result/"
-                self.functions.validate_path(name_folder)
-
-                # Validacion de subcarpetas - nombre del archivo
-                name_folder = name_folder + name_file + "/"
-                self.functions.validate_path(name_folder)
-
-                # Validacion de subcarpetas - periodo analisis (Semanal o Mensual)
-                name_folder = name_folder + period + "/"
-                self.functions.validate_path(name_folder)
-
-                self.queries.save_data_file(data_final, name_folder)
-                
-            else:
-                self.queries.save_data_bd(data_final)
             print("---"*20)
 
             # Proceso: Obtencion de los porcentajes por categoria
             print("\n >>> Dataframe: Detail Classifier <<< \n")
             detail_data_gran = self.functions.get_detail_demand(data_final)
-            print(detail_data_gran)
+            print(detail_data_gran.head(20))
             print("---"*20)
 
-            # Guardado del analisis - Dataframe detail
+            # Guardado del analisis - Dataframe intervalos de demanda & Dataframe detail
             if source_data == 1:
                 # Validacion de la carpeta principal
                 name_folder = "result/"
@@ -296,9 +297,15 @@ class Main_Series_Times():
                 name_folder = name_folder + period + "/"
                 self.functions.validate_path(name_folder)
 
-                #self.functions.validate_path(name_folder = "result/")
-                self.queries.save_data_file(detail_data_gran, name_folder)
-                
+                # Proceso: Guardado de archivo csv - final
+                self.queries.save_data_file_csv(data_final, name_folder, name_file = name_file + "_final")
+
+                # Proceso: Guardado de archivo csv - detail
+                self.queries.save_data_file_csv(detail_data_gran, name_folder, name_file = name_file + "_detail")
+
+                # Proceso: Guardado de archivo excel
+                self.queries.save_data_file_excel(data_final, detail_data_gran, name_folder)
+
             else:
                 self.queries.save_data_bd(detail_data_gran)
             print("---"*20)
@@ -312,5 +319,5 @@ class Main_Series_Times():
         
 if __name__ == "__main__":
     # Proceso de analisis
-    series = Main_Series_Times()
+    series = Main_Demand_Series_Times()
     series.main()
