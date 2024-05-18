@@ -9,6 +9,7 @@ from os import listdir
 from os.path import isfile, join
 
 import math
+from dateutil.relativedelta import relativedelta
 
 from scipy import stats
 import matplotlib.pyplot as plt
@@ -146,6 +147,10 @@ class Functions():
         while True:
             try:
                 period = int(input('Ingrese # opcion: '))    
+                #if period == 1:
+                #    period = "daily"
+                #    break
+
                 if period == 1:
                     period = "week"
                     break
@@ -273,12 +278,14 @@ class Functions():
     # Modulo: # Analisis y compute del coeficiente de variacion - CV2
     def get_cv(self, data, columns, col_obs, potencia = 2):
         #cv = round(pow(data.Demand.std() / data.Demand.mean(), 2), 2)
+        columns.insert(len(columns), "year")
         # Agrupamiento de valores en base a la variables de observacion seleccionada
         #data_retail = data.groupby(columns).agg(sales = (columns[0], 'sum'), count_sales = (columns[0], 'count')).reset_index()
         data_retail = data.groupby(columns).agg(sales = (col_obs, 'sum'), count_sales = (col_obs, 'count')).reset_index()
         for col in data_retail[columns[:-1]]:
             data_retail[col] = data_retail[col].astype(str)
 
+        columns.remove("year")
         # Definicion de la etiqueta en base a la granularidad de las variables seleccionadas
         data_retail["label"] = data_retail[columns[:-1]].apply("_".join, axis = 1)
 
@@ -302,25 +309,8 @@ class Functions():
         return cv_data
     
     # Modulo: Analisis y computo del intervalo medio de demanda - ADI
-    def get_ADI(self, data, columns, col_obs, col_time, period):
-        date = data.groupby(columns[:-1]).agg(start = (col_time, 'min'), end = (col_time, 'max')).reset_index()
-        for col in date[columns[:-1]]:
-            date[col] = date[col].astype(str)
-
-        if period == "month":
-            date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'M')
-            date.period = date.period.apply(lambda x: math.ceil(x))
-
-        else:
-            date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'W')
-            date.period = date.period.apply(lambda x: int(round(x, 0)))
-
-        date["label"] = date[columns[:-1]].apply("_".join, axis = 1)
-        print(date.head())
-        print("---"*20)
-        #print(date[date.label.isin(["1111", "4922"])])
-        #print("---"*20)
-
+    #def get_ADI(self, data, date, columns, col_obs, col_time, period):
+    def get_ADI(self, data, date, columns, col_obs):
         #ADI = round(data.Period.count() / data[data.Demand.notnull()].Demand.count(), 2)
         # Calcular la demanda (count) por fecha -> dia, mes o año por cada valor de la columna analizar
         #data_retail = data.groupby(columns).agg(demand = (columns[0], 'count')).reset_index()
@@ -347,7 +337,8 @@ class Functions():
         
         ##adi_data["demand"] = [data_retail[(data_retail.demand.notnull()) & (data_retail.label == col)].demand.count() for col in adi_data.label.unique().tolist()]
         #adi_data["adi"] = round(adi_data["count"] / adi_data.demand, 4)
-        adi_data["adi"] = round(adi_data.period / adi_data.demand, 1)
+        #adi_data["adi"] = round(adi_data.period / adi_data.demand, 1)
+        adi_data["adi"] = round(adi_data.period / adi_data.demand, 2)
         #print(adi_data.head())
 
         return adi_data
@@ -382,15 +373,20 @@ class Functions():
         for key in data_frame_metric.keys():
             temp = data_frame_metric[key]
             temp["granularity"] = key
-            temp["year"] = temp.granularity.str.split(" ", expand = True)[0]
+            #temp["year"] = temp.granularity.str.split(" ", expand = True)[0]
             data_final = pd.concat([data_final, temp], axis = 0, ignore_index = False)
-    
+
         data_final.reset_index(inplace = True, drop = True)
         data_final.adi.fillna(0, inplace = True)
         data_final.cv.fillna(0, inplace = True)
         data_final.cv2.fillna(0, inplace = True)
+
+        # Validacion - Nulos, Activo o Min Semanas
         data_final.category.fillna("None", inplace = True)
-            
+        data_final.loc[data_final.active == 0, "category"] = "None"
+        data_final.loc[data_final.flag_week_min == 1, "category"] = "None"
+        data_final.drop("flag_week_min", axis = 1, inplace = True)
+
         return data_final
     
     # Modulo: Generacion de las caracteristicas del comportamiento sobre el grado de dificultad de prediccion o clasificacion de patrones
@@ -400,24 +396,29 @@ class Functions():
         number = []
         porc = []
         years = []
+        granularity = []
 
         # Generacion metricas de los intervalos de cada categoria del grado de prediccion
-        for year in data_final.year.unique().tolist():
-            temp = data_final[data_final.year == year]
+        #for year in data_final.year.unique().tolist():
+        for gran in data_final.granularity.unique().tolist():
+            #temp = data_final[data_final.year == year]
+            temp = data_final[data_final.granularity == gran]
             total = len(temp)
             category = temp.category.unique().tolist()
             part = [len(temp[temp.category == cat]) for cat in category]
             profile.extend(category)
             number.extend(part)
             porc.extend([(x / total) * 100 for x in part])
-            years.extend([year for _ in range(len(category))])
+            #years.extend([year for _ in range(len(category))])
+            granularity.extend([gran for _ in range(len(category))])
 
         # Construccion del dataframe detail
         detail_data_gran["profile"] = profile
         detail_data_gran["count"] = number
         detail_data_gran["percentage"] = porc
         detail_data_gran.percentage = detail_data_gran.percentage.round(2)
-        detail_data_gran["year"] = years
+        #detail_data_gran["year"] = years
+        detail_data_gran["granularity"] = granularity
 
         return detail_data_gran
     
@@ -484,6 +485,7 @@ class Functions():
         for idx, group in grouped:
             #print(idx)
             for col_name in group[columns_gran[1:]]:
+            #for col_name in group[columns_gran]:
                 group[col_name] = group[col_name].astype(str)
 
             if period == "month":
@@ -496,6 +498,8 @@ class Functions():
 
             #group["label"] = group[columns_gran[:-1]].apply("_".join, axis=1)
             group["label"] = group[columns_gran[1:]].apply("_".join, axis = 1)
+            #group["label"] = group[columns_gran].apply("_".join, axis = 1)
+
             #label.append(str(list(idx)[:-1]).replace("[", "").replace("]", ""))
             label.extend(group.label.unique().tolist())
 
@@ -541,6 +545,163 @@ class Functions():
                                                     count_not_outliers = ("without_outliers", "sum")).reset_index()
 
         return data_label
+
+    # Modulo: Identificacion de etiquetacion (6, 12, 24, etc) meses
+    def identify_periods(self, date, period, num_per = 20):
+        int_per = []
+
+        # Identificacion y computo de intervalos de tiempo
+        # Validacion por dias
+        if period == "daily":
+            total_days = 365
+            for idx in range(num_per):        
+                if idx == 0:
+                    int_per.append(int(total_days / 2))
+
+                else:
+                    int_per.append(total_days * idx)
+
+        # Validacion por meses
+        elif period == "month":
+            total_months = 12
+            for idx in range(num_per):        
+                if idx == 0:
+                    int_per.append(int(total_months / 2))
+
+                else:
+                    int_per.append(total_months * idx)
+
+        # Validacion por semanas
+        else:
+            total_weeks = 52
+            for idx in range(num_per):        
+                if idx == 0:
+                    int_per.append(int(total_weeks / 2))
+
+                else:
+                    int_per.append(total_weeks * idx)
+
+        int_per.reverse()
+        total = len(int_per) - 1
+        date["flag_periods"] = ""
+        for idx, per in enumerate(int_per):
+            if idx == total:
+                date.loc[date.period <= per, "flag_periods"] = "6 months" #if period != "month" else str(per) + " months"
+
+            else:
+                date.loc[date.period <= per, "flag_periods"] = str((total - idx) * 12) + " months" if period != "month" else str(per) + " months"
+
+        return date
+
+    # Modulo: Validacion de minimo de semanas permitidas para pronosticar
+    def validate_min_week(self, data, columns_gran, col_time, min_week = 6):
+        grouped = data.groupby(columns_gran[1:])
+        label = []
+        count = []
+
+        for idx, group in grouped:
+            #print(idx)
+            for col_name in group[columns_gran[1:]]:
+            #for col_name in group[columns_gran]:
+                group[col_name] = group[col_name].astype(str)
+
+            group["label"] = group[columns_gran[1:]].apply("_".join, axis = 1)
+            label.extend(group.label.unique().tolist())
+
+            group['week'] = group[col_time].dt.isocalendar().week
+            count.append(len(group.week.unique().tolist()))
+
+        data_label = pd.DataFrame()
+        data_label["label"] = label
+        data_label["count_week"] = count
+        data_label = data_label.groupby(["label"]).agg({"count_week": 'sum'}).reset_index()
+        data_label["flag_week_min"] = np.where(data_label.count_week > min_week, 0, 1)
+
+        return data_label
+
+    # Modulo: Identificador de series activas en base a un intervalo de tiempo
+    def get_data_active(self, data, columns, col_time, limit_date = 6):
+        max_date = data[col_time].max()
+        # Determinacion del limite de observaciones activas (6 meses)
+        limit_date_ref = max_date + relativedelta(months = - limit_date)
+        #print(max_date, limit_date_ref)
+
+        data_active = data.copy()
+        data_active = data_active[data_active[col_time] >= limit_date_ref]
+        data_active['month'] = data_active[col_time].dt.month
+        col = columns[:-1]
+        col.append("month")
+        data_active = data_active[col].drop_duplicates()
+        data_active = data_active.groupby(columns[:-1]).agg({"month": 'count'}).reset_index()
+
+        # Transformacion de tipo de valor
+        for col in data_active[columns[:-1]]:
+            data_active[col] = data_active[col].astype(str)
+
+        # Generacion de identificador
+        data_active["label"] = data_active[columns[:-1]].apply("_".join, axis = 1)
+
+        # Validacion de datos activos
+        data_active["active"] = np.where(data_active["month"] >= limit_date, 1, 0)
+        data_active = data_active[["label", "active"]].drop_duplicates()
+        
+        return data_active
+
+    # Modulo: Computo de total de dias, semanas o meses
+    def get_compute_dif_dates(self, data, columns, col_time, period = "month", limit_date = 6):
+        # Agrupamento por min y max fecha
+        date = data.groupby(columns[:-1]).agg(start = (col_time, 'min'), end = (col_time, 'max')).reset_index()
+
+        # Transformacion de tipo de valor
+        for col in date[columns[:-1]]:
+            date[col] = date[col].astype(str)
+
+        # Computo del total de dias
+        if period == "daily":
+            date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'D')
+            date.period = date.period.apply(lambda x: int(round(x, 0)))
+
+        # Computo del total de meses
+        elif period == "month":
+            date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'M')
+            date.period = date.period.apply(lambda x: math.ceil(x))
+            date.period = date.period + 1
+            
+            #date['period'] = (date['end'].dt.to_period('M').sub(date['start'].dt.to_period('M')).apply(lambda x: x.n))
+
+        # # Computo del total de semanas
+        else:
+            date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'W')
+            date.period = date.period.apply(lambda x: int(round(x, 0)))
+
+        # Generacion de identificador
+        date["label"] = date[columns[:-1]].apply("_".join, axis = 1)
+
+        # Determinacion del limite de observaciones activas (6 meses)
+        data_active = self.get_data_active(data, columns, col_time, limit_date)
+        date = pd.merge(date, data_active, how = "left", on = ["label"])
+
+        date = self.identify_periods(date.copy(), period)
+        #print(date.active.unique())
+        #print(date.flag_periods.unique())
+
+        return date
+
+    # Modulo: Identificador del tipo de variables (Categoricas y numericas)
+    def get_segmetation_variables(self, data, columns_name):
+        # Determinacion de las columnas categoricas y numericas
+        columns_num = []
+        columns_cat = []
+        for col in columns_name:
+            #print(" >> Col: {} -> {}".format(col, data[col].dtype))
+            format_col = data[col].dtype
+            if (format_col == "int64") | (format_col == int) | (format_col == "float64") | (format_col == float):
+                columns_num.append(col)
+
+            elif (format_col == object) | (format_col == str):
+                columns_cat.append(col)
+
+        return columns_num, columns_cat
 
     # Modulo: Computo de tiempos sobre un proceso
     def get_time_process(self, seg):
