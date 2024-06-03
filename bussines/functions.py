@@ -240,6 +240,62 @@ class Functions():
 
         return col_serie
 
+    # Modulo: determinacion de las variables (precio y ingresos) para la clasificacion inventario ABC
+    def select_var_abc(self, data):
+        print("\n >>> Seleccion variable precio y observacion (ingresos, ventas, etc.) <<< \n")
+        columns = data.columns.tolist()
+        for idx, col_name in enumerate(columns):
+            print(" > {} - {}".format(idx + 1, col_name))
+
+        print()
+        col_name = []
+        total = len(columns)
+
+        # Proceso: Validacion de tipo formato y seleccion de variable (precio)
+        while True:
+            try:
+                x = int(input('Ingrese numero de columna (precio): '))
+                type = data[columns[x - 1]].dtype
+                if (x < 1) | (x > total):
+                    print("\n Indice incorrecto !!! \n")
+
+                if (type == "int64") | (type == "int") | (type == "float64") | (type == "float"):
+                    col_name.append(x)
+                    break
+
+                else:
+                    print("\n >>> Error: Variable seleccionado no contiene un formato tipo: \'Numerico\' !!! \n")
+
+            except:
+                print("\n >> Error: Ingrese un valor numerico !!! \n")
+
+        # Proceso: Validacion de tipo formato y seleccion de variable (ingresos, ventas, etc.)
+        while True:
+            try:
+                x = int(input('Ingrese numero de columna (ingresos, ventas, etc.): '))
+                type = data[columns[x - 1]].dtype
+                if (x < 1) | (x > total):
+                    print("\n Indice incorrecto !!! \n")
+
+                if (type == "int64") | (type == "int") | (type == "float64") | (type == "float"):
+                    col_name.append(x)
+                    break
+
+                else:
+                    print("\n >>> Error: Variable seleccionado no contiene un formato tipo: \'Numerico\' !!! \n")
+
+            except:
+                print("\n >> Error: Ingrese un valor numerico !!! \n")
+
+        col_var_abc = []
+        for index in col_name:
+            index -= 1
+            col_var_abc.append(columns[index])
+
+        print("---"*20)
+
+        return col_var_abc
+
     # Modulo: Determinacion de la granularidad de los datos
     def select_gran_data(self, data):
         print("\n >>> Seleccion la granularidad <<< \n")
@@ -330,7 +386,6 @@ class Functions():
         adi_data.rename(columns = {"count": "demand"}, inplace = True)
         #print(adi_data.head())
         #print("---"*20)
-        #print(adi_data[adi_data.label.isin(["1111", "4922"])])
         
         # Extraccion del contador por demanda y valor de la columna analizar
         adi_data = pd.merge(adi_data, date[["label", "period"]], how = "left", on = ["label"])
@@ -339,6 +394,11 @@ class Functions():
         #adi_data["adi"] = round(adi_data["count"] / adi_data.demand, 4)
         #adi_data["adi"] = round(adi_data.period / adi_data.demand, 1)
         adi_data["adi"] = round(adi_data.period / adi_data.demand, 2)
+
+        # Validacion para identificar la demanda sea menor al periodo total
+        adi_data["flag"] = np.where(adi_data.demand <= adi_data.period, 0, 1)
+        adi_data.loc[adi_data.flag == 1, "adi"] = 0
+        adi_data.drop("flag", axis = 1, inplace = True)
         #print(adi_data.head())
 
         return adi_data
@@ -365,63 +425,6 @@ class Functions():
             #print(" >> Lumpy <<")
             return 'lumpy'
 
-    # Modulo: Generacion de las metricas del analisis de los intervalos de demanda
-    def get_demand_classifier(self, data_frame_metric):
-        data_final = pd.DataFrame()
-
-        # Determinacion de etiquetado e insercion del resultado de los grados de prediccion de cada serie por granularidad seleccionada
-        for key in data_frame_metric.keys():
-            temp = data_frame_metric[key]
-            temp["granularity"] = key
-            #temp["year"] = temp.granularity.str.split(" ", expand = True)[0]
-            data_final = pd.concat([data_final, temp], axis = 0, ignore_index = False)
-
-        data_final.reset_index(inplace = True, drop = True)
-        data_final.adi.fillna(0, inplace = True)
-        data_final.cv.fillna(0, inplace = True)
-        data_final.cv2.fillna(0, inplace = True)
-
-        # Validacion - Nulos, Activo o Min Semanas
-        data_final.category.fillna("None", inplace = True)
-        data_final.loc[data_final.active == 0, "category"] = "None"
-        data_final.loc[data_final.flag_week_min == 1, "category"] = "None"
-        data_final.drop("flag_week_min", axis = 1, inplace = True)
-
-        return data_final
-    
-    # Modulo: Generacion de las caracteristicas del comportamiento sobre el grado de dificultad de prediccion o clasificacion de patrones
-    def get_detail_demand(self, data_final):
-        detail_data_gran = pd.DataFrame()
-        profile = []
-        number = []
-        porc = []
-        years = []
-        granularity = []
-
-        # Generacion metricas de los intervalos de cada categoria del grado de prediccion
-        #for year in data_final.year.unique().tolist():
-        for gran in data_final.granularity.unique().tolist():
-            #temp = data_final[data_final.year == year]
-            temp = data_final[data_final.granularity == gran]
-            total = len(temp)
-            category = temp.category.unique().tolist()
-            part = [len(temp[temp.category == cat]) for cat in category]
-            profile.extend(category)
-            number.extend(part)
-            porc.extend([(x / total) * 100 for x in part])
-            #years.extend([year for _ in range(len(category))])
-            granularity.extend([gran for _ in range(len(category))])
-
-        # Construccion del dataframe detail
-        detail_data_gran["profile"] = profile
-        detail_data_gran["count"] = number
-        detail_data_gran["percentage"] = porc
-        detail_data_gran.percentage = detail_data_gran.percentage.round(2)
-        #detail_data_gran["year"] = years
-        detail_data_gran["granularity"] = granularity
-
-        return detail_data_gran
-    
     # Modulo: Identificacion de outliers (ruido o datos atipicos)
     def get_outliers(self, data, col_obs, name_graph, name_file, col_period, threshold = 3):
         values = data[col_obs]
@@ -505,11 +508,12 @@ class Functions():
 
         data_label = pd.DataFrame()
         data_label["label"] = label
-        name_col = "count_" + str(period)
+        #name_col = "count_" + str(period)
+        name_col = str(period) + "s_behavior"
         data_label[name_col] = count
         #data_label = data_label.groupby(["label"]).agg(months = ("count_month", 'sum')).reset_index()
         data_label = data_label.groupby(["label"]).agg({name_col: 'sum'}).reset_index()
-        data_label.rename(columns = {name_col: period}, inplace = True)
+        #data_label.rename(columns = {name_col: period}, inplace = True)
 
         return data_label
 
@@ -668,6 +672,8 @@ class Functions():
             date.period = date.period + 1
             
             #date['period'] = (date['end'].dt.to_period('M').sub(date['start'].dt.to_period('M')).apply(lambda x: x.n))
+            #date.period = date.period.apply(lambda x: math.ceil(x))
+            #date.period = date.period + 1
 
         # # Computo del total de semanas
         else:
@@ -681,27 +687,274 @@ class Functions():
         data_active = self.get_data_active(data, columns, col_time, limit_date)
         date = pd.merge(date, data_active, how = "left", on = ["label"])
 
-        date = self.identify_periods(date.copy(), period)
+        #date = self.identify_periods(date.copy(), period)
+        date["total_periods"] = date.period #date.period.apply(lambda x: str(x) + " month" if x == 1 else str(x) + " months")
         #print(date.active.unique())
         #print(date.flag_periods.unique())
 
         return date
 
-    # Modulo: Identificador del tipo de variables (Categoricas y numericas)
-    def get_segmetation_variables(self, data, columns_name):
-        # Determinacion de las columnas categoricas y numericas
-        columns_num = []
-        columns_cat = []
-        for col in columns_name:
-            #print(" >> Col: {} -> {}".format(col, data[col].dtype))
-            format_col = data[col].dtype
-            if (format_col == "int64") | (format_col == int) | (format_col == "float64") | (format_col == float):
-                columns_num.append(col)
+    # Modulo: Catalogacion de las categias ABC
+    def classify_abc(self, percentage):
+        """ 
+        A -> representan 80% de los ingresos totales
+        B -> representan 10%, donde A+B integran el 90% de los ingresos totales
+        C -> representan el ultimo 10% de los ingresos totales
+        """
+        if (percentage > 0) & (percentage <= 0.80):
+            return "A"
 
-            elif (format_col == object) | (format_col == str):
-                columns_cat.append(col)
+        elif (percentage > 0.80) & (percentage <= 0.90):
+            return "B"
 
-        return columns_num, columns_cat
+        else:
+            return 'C'
+
+    # Modulo: Modelo de clasificacion de inventario ABC
+    def get_data_ABC(self, data, col_gran, period):
+        col_gran.extend([period, "year"])
+        #print(col_gran)
+
+        # Sumatoria de los ingresos por granularidad
+        #data = data.groupby(col_gran)['revenue'].sum().to_frame().reset_index()
+        data = data.groupby(col_gran).agg(revenue = ('revenue', 'sum'), sales = ('sales', 'sum')).reset_index()
+        data["sales"] = data["sales"].round()
+        data["sales"] = data["sales"].astype(int)
+
+        for col in data[col_gran[:-2]]:
+            data[col] = data[col].astype(str)
+
+        # Formateo, identificadores y eliminacion de variables
+        data["label"] = data[col_gran[:-2]].apply("_".join, axis = 1)
+        #data["month"] = data.month.map("{:02}".format)
+        data[period] = data[period].map("{:02}".format)
+        name_col = "year_" + period
+        data[name_col] = data['year'].map(str) + '-' + data[period].map(str)
+        data.drop(col_gran[:-2], axis = 1, inplace = True)
+        
+        df = data.copy()
+        df = df.groupby("label")['sales'].sum().to_frame().reset_index()
+
+        # Pivoteo en base al parseo del año/mes sobre las identificadores y sumatoria de los ingresos
+        data = data.pivot(index = "label", columns = name_col, values = 'revenue').reset_index().fillna(0)
+        data_xyz = self.get_data_XYZ(data.copy())
+        print(data.shape)
+
+        # Computo del total de los ingresos
+        data['total'] = data.iloc[:, 1:].sum(axis =  1, numeric_only = True)
+
+        # Agrupamiento para el computo del total de ingresos por cada identificador de granularidad
+        data = data.groupby('label').agg(total_revenue = ('total','sum')).sort_values(by = 'total_revenue', ascending = False).reset_index()
+
+        # Computo de la suma de los ingresos acomulados y la equivalencia del porcentaje por cada identificador de las variables de granularidad
+        # y el total de los ingresos
+        data['rev_count'] = data['total_revenue'].cumsum()
+        data['rev_total'] = data['total_revenue'].sum()
+        data['rev_percent'] = round(data['rev_count'] / data['rev_total'], 2)
+
+        # Clasificacion de las categorias A, B o C
+        data['category_abc'] = data['rev_percent'].apply(self.classify_abc)
+
+        # Clasificacion del ranking por categoria a, b y c (metodo de pareto)
+        #data['rank_abc'] = data['rev_percent'].rank().astype(int)
+
+        df = pd.merge(df, data[['label', 'category_abc']], how = "left", on = ["label"])
+        grouped_rank = df.groupby(['label', 'category_abc']).agg(total_sales = ('sales', 'sum')).reset_index()
+        #print(grouped_rank.head())
+        #print(grouped_rank.shape)
+        #print("----"*30)
+
+        data = data.groupby(['label', 'category_abc']).agg(total_revenue = ('total_revenue', sum)).reset_index()
+        data.total_revenue = data.total_revenue.astype(int)
+
+        # Concatenacion de los modelos ABC y XYZ
+        #data = pd.merge(data, data_xyz, how = "left", on = ["label"])
+        data = pd.merge(data, grouped_rank, how = "left", on = ["label", 'category_abc'])
+
+        return data
+
+    # Modulo: Catalogacion de las categorias XYZ
+    def classify_xyz(self, cv):
+        if cv <= 0.5:
+            return "X"
+
+        elif (cv >= 0.5) & (cv <= 1):
+            return "Y"
+
+        else:
+            return 'Z'
+
+    # Modulo: Modelo de clasificacion XYZ
+    def get_data_XYZ(self, data):
+        # Determinacion del total de meses
+        total = len(data.columns.tolist()) - 1
+
+        # Computo del total, promedio, std y CV (Coeficiente de variacion) de ingresos
+        data['total'] = data.iloc[:, 1:].sum(axis =  1, numeric_only = True)
+        data["average"] = data.total / total
+        data["std"] = data.iloc[:, 1: total].std(axis = 1)
+        data['cv'] = round(data['std'] / data['average'], 2)
+        
+        # Clasificacion de las categorias X, Y o Z
+        data['category_xyz'] = data['cv'].apply(self.classify_xyz)
+
+        return data[['label', 'category_xyz']].reset_index(drop = True)
+
+    # Modulo: Catalogacion del grado de forecast
+    def classify_fsct(self, fsct):
+        if fsct == "A_smooth":
+            return "easy"
+
+        elif fsct == "A_erratic":
+            return "harder"
+
+        elif fsct == "A_intermittent":
+            return "harder"
+
+        elif fsct == "A_lumpy":
+            return "very difficult"
+
+        elif fsct == "B_smooth":
+            return "easy"
+
+        elif fsct == "B_erratic":
+            return "harder"
+
+        elif fsct == "B_intermittent":
+            return "difficult"
+
+        elif fsct == "B_lumpy":
+            return "very difficult"
+
+        elif fsct == "C_smooth":
+            return "easy"
+
+        elif fsct == "C_erratic":
+            return "difficult"
+
+        elif fsct == "C_intermittent":
+            return "difficult"
+
+        elif fsct == "C_lumpy":
+            return "very difficult"
+
+        else:
+            return "none"
+
+    # Modulo: Catalogacion del grado de prediccion
+    def get_forecastability(self, data):
+        data = data[["label", "category_abc", "category_behavior"]]
+
+        columns = data.columns.tolist()
+        data["label_fcst"] = data[columns[-2:]].apply("_".join, axis = 1)
+
+        # Clasificacion del grado de prediccion
+        data['forecastability'] = data['label_fcst'].apply(self.classify_fsct)
+        #data.drop("label_fcst", axis = 1, inplace = True)
+
+        return data
+
+    # Modulo: Generacion de las metricas del analisis de los intervalos de demanda
+    def get_classifier_inventory_abc(self, data_frame_abc):
+        data_final = pd.DataFrame()
+
+        # Determinacion de etiquetado e insercion del resultado de los grados de prediccion de cada serie por granularidad seleccionada
+        for key in data_frame_abc.keys():
+            temp = data_frame_abc[key]
+            temp["granularity"] = key
+            data_final = pd.concat([data_final, temp], axis = 0, ignore_index = False)
+
+        data_final.reset_index(inplace = True, drop = True)
+
+        return data_final
+
+    # Modulo: Generacion de las caracteristicas del clasificador ABC y XYZ
+    def get_detail_abc(self, data):
+        grouped_abc = data.groupby(['granularity', 'category_abc']).agg(count_abc = ('label', 'count'), count_label = ('label', 'nunique'), total_revenue = ('total_revenue', 'sum')).reset_index()
+        grouped_abc["%_rev"] =  grouped_abc.groupby(["granularity"])["total_revenue"].apply(lambda x:  round(100 * (x / x.sum()))).reset_index(drop = True)
+        grouped_abc["%_abc"] =  grouped_abc.groupby(["granularity"])["count_abc"].apply(lambda x:  round(100 * (x / x.sum()))).reset_index(drop = True)
+        grouped_abc['%_rank'] = round((grouped_abc['count_label'] / grouped_abc['count_label'].sum()) * 100, 2)
+
+        #grouped_xyz = data.groupby(['granularity', 'category_xyz']).agg(count_xyz = ('label', 'count')).reset_index()
+        #grouped_xyz["%_xyz"] =  grouped_xyz.groupby(["granularity"])["count_xyz"].apply(lambda x:  round(100 * (x / x.sum()))).reset_index(drop = True)
+
+        #data = pd.merge(grouped_abc, grouped_xyz, how = "left", on = ["label"])
+        #data = pd.concat([grouped_abc, grouped_xyz.drop("granularity", axis = 1)], axis = 1, ignore_index = False)
+
+        #grouped_rank = data.groupby(['granularity', 'category_abc']).agg(total_sales = ('total_sales', 'sum')).reset_index()        
+        #grouped_rank["total"] =  grouped_rank.groupby(["granularity"])["total_sales"].apply(lambda x:  round(100 * (x / x.sum()))).reset_index(drop = True)
+        #grouped_rank["%_rank"] = round(grouped_rank.count_rank / grouped_rank.total, 2) * 100
+        #print(grouped_rank)
+        grouped = data.groupby(['granularity', 'category_abc']).agg(count_abc = ('label', 'count'), count_label = ('label', 'nunique'), total_revenue = ('total_revenue', 'sum')).reset_index()
+        grouped = grouped.groupby(['granularity'])
+        for name, group in grouped:
+            #print(group)
+            total = group.count_label.sum()
+            print(group.count_label / total)
+            #break
+        print("--------------------------+++++++++++++++++++++++++++++++")
+
+        #data = pd.concat([grouped_abc, grouped_rank.drop(["granularity", "category_abc"], axis = 1)], axis = 1, ignore_index = False)
+
+        return grouped_abc
+
+    # Modulo: Generacion de las metricas del analisis de los intervalos de demanda
+    def get_demand_classifier(self, data_frame_metric):
+        data_final = pd.DataFrame()
+
+        # Determinacion de etiquetado e insercion del resultado de los grados de prediccion de cada serie por granularidad seleccionada
+        for key in data_frame_metric.keys():
+            temp = data_frame_metric[key]
+            temp["granularity"] = key
+            #temp["year"] = temp.granularity.str.split(" ", expand = True)[0]
+            data_final = pd.concat([data_final, temp], axis = 0, ignore_index = False)
+
+        data_final.reset_index(inplace = True, drop = True)
+        data_final.adi.fillna(0, inplace = True)
+        #data_final.cv.fillna(0, inplace = True)
+        data_final.cv2.fillna(0, inplace = True)
+
+        # Validacion - Nulos, Activo o Min Semanas
+        data_final.category_behavior.fillna("none", inplace = True)
+        data_final.loc[data_final.active == 0, "category_behavior"] = "none"
+        data_final.loc[data_final.flag_week_min == 1, "category_behavior"] = "none"
+        data_final.loc[data_final.adi == 0, "category_behavior"] = "none"
+        data_final.drop("flag_week_min", axis = 1, inplace = True)
+
+        return data_final
+    
+    # Modulo: Generacion de las caracteristicas del comportamiento sobre el grado de dificultad de prediccion o clasificacion de patrones
+    def get_detail_demand(self, data_final):
+        detail_data_gran = pd.DataFrame()
+        profile = []
+        number = []
+        porc = []
+        years = []
+        granularity = []
+
+        # Generacion metricas de los intervalos de cada categoria del grado de prediccion
+        #for year in data_final.year.unique().tolist():
+        for gran in data_final.granularity.unique().tolist():
+            #temp = data_final[data_final.year == year]
+            temp = data_final[data_final.granularity == gran]
+            total = len(temp)
+            category = temp.category_behavior.unique().tolist()
+            part = [len(temp[temp.category_behavior == cat]) for cat in category]
+            profile.extend(category)
+            number.extend(part)
+            porc.extend([(x / total) * 100 for x in part])
+            #years.extend([year for _ in range(len(category))])
+            granularity.extend([gran for _ in range(len(category))])
+
+        # Construccion del dataframe detail
+        detail_data_gran["profile"] = profile
+        detail_data_gran["count"] = number
+        detail_data_gran["percentage"] = porc
+        detail_data_gran.percentage = detail_data_gran.percentage.round(2)
+        #detail_data_gran["year"] = years
+        detail_data_gran["granularity"] = granularity
+
+        return detail_data_gran
 
     # Modulo: Computo de tiempos sobre un proceso
     def get_time_process(self, seg):

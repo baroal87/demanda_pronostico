@@ -108,6 +108,21 @@ class Main_Demand_Series_Times():
         
         print("+*+*"*30)
 
+        # Seleccion de las variables (precio y venta o ingresos netos)
+        col_obs_abc = self.functions.select_var_abc(data)
+        print(" >> Variables analisis de tiempo: {}\n".format(str(col_obs_abc).replace("[", "").replace("]", "")))
+        while True:
+            validate = input('Las variables seleccionadas son correctas (y / n): ')
+            if validate.lower() == "y":
+                break
+            
+            elif (validate.lower() != "y") & (validate.lower() != "n"):
+                print("\n > Opcion invalida. Seleccione: y -> si o n -> no !!! \n")
+                
+            elif validate.lower() == "n":
+                col_obs_abc = self.functions.select_var_abc(data)
+                print(" >> Variables analisis de tiempo: {}\n".format(str(col_obs_abc).replace("[", "").replace("]", "")))
+
         # Seleccion de las variables para filtrar la granularidad de los datos
         col_gran = self.functions.select_gran_data(data)
         print(" >> Granularidad seleccionada: {}\n".format(str(col_gran).replace("[", "").replace("]", "")))
@@ -125,11 +140,11 @@ class Main_Demand_Series_Times():
 
         print("+*+*"*30)
                 
-        return data, period, col_serie, col_gran, name_file.split(".")[0]
+        return data, period, col_serie, col_obs_abc, col_gran, name_file.split(".")[0]
 
     # Modulo: Analisis y generacion de los patrones de demanda para la viabilidad de clasificacion de observaciones
     def data_demand(self, data, period, col_serie, col_gran, name_file):
-        print("\n >> DataFrame: Sales <<<\n")
+        print("\n >> DataFrame: {} <<<\n".format(col_serie[1]))
         #try:
         #    data[col_serie[0]] = pd.to_datetime(data[col_serie[0]], format = "%Y-%m-%d")
             
@@ -205,6 +220,7 @@ class Main_Demand_Series_Times():
                 #data_date = self.queries.get_compute_dif_dates(df.copy(), columns, col_time = col_serie[0], period = period, limit_date = 6, function = self.functions)
                 data_date = self.functions.get_compute_dif_dates(df.copy(), columns, col_time = col_serie[0], period = period, limit_date = 6)
                 print(data_date.head())
+                #print(data_date[data_date.store_nbr == "2050"])
                 print("---"*20)
 
                 print("\n >>> DataFrame: ADI <<<\n")
@@ -220,13 +236,14 @@ class Main_Demand_Series_Times():
                 print("---"*20)
 
                 # Proceso: Union de los analisis del ADI y CV2
-                print("\n >>> DataFrame: Analisis Finalizada - ({}) \n".format(col[0]))
-                df = pd.merge(adi_data[["label", "adi"]], cv_data[["label", "cv", "cv2"]], how = "left", on = ["label"])
+                print("\n >>> DataFrame: Analisis Finalizada - ({}) \n".format(col[1]))
+                #df = pd.merge(adi_data[["label", "adi"]], cv_data[["label", "cv", "cv2"]], how = "left", on = ["label"])
+                df = pd.merge(adi_data[["label", "adi"]], cv_data[["label", "cv2"]], how = "left", on = ["label"])
 
                 # Proceso: Clasificacion del tipo de categoria sobre el intervalo de demanda por ADI y CV2
-                df["category"] = df.apply(self.functions.get_category, axis = 1)
+                df["category_behavior"] = df.apply(self.functions.get_category, axis = 1)
                 df = pd.merge(df, data_label, how = "left", on = ["label"])
-                df = pd.merge(df, data_date[["label", "active", "flag_periods"]], how = "left", on = ["label"])
+                df = pd.merge(df, data_date[["label", "active", "total_periods"]], how = "left", on = ["label"])
                 df = pd.merge(df, data_min_week[["label", "flag_week_min"]], how = "left", on = ["label"])
                 print(df.head())
                 print("+++"*30)
@@ -235,15 +252,40 @@ class Main_Demand_Series_Times():
                 #metric_name = str(year) + " - " + ' - '.join(columns)
                 metric_name = ' - '.join(columns)
                 data_frame_metric[metric_name] = df
-                
+
                 #break
             #break
-                
+
         return data_frame_metric
+
+    def data_classify_abc(self, data, col_obs_abc, col_gran, col_serie, period):
+        granularity = []
+        data_frame_abc = {}
+        for col in col_gran:
+            print("\n >> DataFrame: Revenue - ({}) <<<\n".format(col))
+            granularity.append(col_serie[0])
+            granularity.insert(0, col)
+            #print(granularity)
+
+            data_abc = self.queries.get_grouped_data_ABC(data.copy(), granularity.copy(), col_obs_abc)
+            print(data_abc.head())
+            print("---"*30)
+
+            print("\n >> DataFrame: Classification Inventory ABC - ({}) <<<\n".format(col))
+            granularity.remove(col_serie[0])
+            data_abc = self.functions.get_data_ABC(data_abc.copy(), granularity.copy(), period)
+            print(data_abc.head())
+            print("+++"*30)
+            
+            # dict_keys(['dept_nbr', 'store_nbr - dept_nbr'])
+            metric_name = ' - '.join(granularity)
+            data_frame_abc[metric_name] = data_abc
+            
+        return data_frame_abc
 
     def main(self):
         # Bandera de prueba
-        test = False
+        test = True
         try:
             start_time = time()
         
@@ -256,7 +298,7 @@ class Main_Demand_Series_Times():
             source_data = 1
             # Extraccion de datos por archivo y seleccion de variables analizar
             if source_data == 1:
-                #data, period, col_serie, col_gran, name_file = self.select_options()
+                #data, period, col_serie, col_obs_abc, col_gran, name_file = self.select_options()
                 pass
 
             # Extraccion de datos por base de datos (Fijar las variables analizar, si no aplicar el modulo "select_options")
@@ -273,11 +315,13 @@ class Main_Demand_Series_Times():
                 print(" >>> Error: Seleccion de fuente incorrecta !!!\n")
                 sys.exit()
 
+            #sys.exit()
             #print(period, col_serie, col_gran, name_file)
             source_data = 1
             period = "month" # week, month
             col_serie = ['fecha', 'sales']
             col_gran = ['dept_nbr', 'store_nbr'] #'dept_nbr',
+            col_obs_abc = ['price', "sales"]
             name_file = "data_Atom_agu_3.csv"
             
             data = self.queries.get_data_file(name_file)
@@ -291,19 +335,56 @@ class Main_Demand_Series_Times():
 
             # Proceso: Clasificación de los patrones de demanda
             data_frame_metric = self.data_demand(data.copy(), period, col_serie, col_gran, name_file)
+            print("###"*30)
+
+            # Proceso: Clasificacion de inventario ABC
+            data_frame_abc = self.data_classify_abc(data, col_obs_abc, col_gran, col_serie, period)
+            print("###"*30)
 
             # Proceso: Generacion de la estractura final del dataframe clasificacion en base a demanda
             print("\n >>> Dataframe: Demand Classifier <<< \n")
-            data_final = self.functions.get_demand_classifier(data_frame_metric)
-            print(data_final.head())
-            print("\n > Volumen: ", data_final.shape)
+            data_demand = self.functions.get_demand_classifier(data_frame_metric)
+            print(data_demand.head())
+            print("\n > Volumen: ", data_demand.shape)
             print("---"*20)
 
             # Proceso: Obtencion de los porcentajes por categoria
             print("\n >>> Dataframe: Detail Classifier <<< \n")
-            detail_data_gran = self.functions.get_detail_demand(data_final)
+            detail_data_gran = self.functions.get_detail_demand(data_demand)
             print(detail_data_gran.head(20))
+            print("\n > Volumen: ", detail_data_gran.shape)
             print("---"*20)
+
+            # Proceso: Generacion de la estractura final del dataframe clasificacion en base a demanda
+            print("\n >>> Dataframe: Classifier Inventory ABC <<< \n")
+            data_final_abc = self.functions.get_classifier_inventory_abc(data_frame_abc)
+            print(data_final_abc.head())
+            print("\n > Volumen: ", data_final_abc.shape)
+            print("---"*20)
+
+            # Proceso:
+            print("\n >>> Dataframe: Detail Inventory ABC <<< \n")
+            detail_data_abc = self.functions.get_detail_abc(data_final_abc.copy())
+            print(detail_data_abc.head())
+            print("\n > Volumen: ", detail_data_abc.shape)
+            print("---"*20)
+
+            print("\n >>> Dataframe: Final <<< \n")
+            #data_final = pd.merge(data_demand, data_final_abc_xyz[["label", "category_abc", "category_xyz", "total_revenue"]], how = "left", on = ["label"])
+            data_final = pd.merge(data_demand, data_final_abc[["label", "category_abc", "total_revenue"]], how = "left", on = ["label"])
+            data_fsct = self.functions.get_forecastability(data_final.copy())
+            data_final = pd.merge(data_final, data_fsct[["label", "forecastability"]], how = "left", on = ["label"])
+
+            columns = ["granularity", "label", 'active', 'cv2']
+            columns_data_final = data_final.columns.tolist()
+            columns_data_final.sort()
+            columns.extend([col for col in columns_data_final if col not in columns])
+
+            data_final = data_final.reindex(columns, axis = 1)
+            print(data_final.head())
+            print("\n > Volumen: ", data_final.shape)
+            print("---"*20)
+            #print(data_final[data_final.forecastability == "difficult"])
 
             # Guardado del analisis - Dataframe intervalos de demanda & Dataframe detail
             if source_data == 1:
@@ -319,19 +400,26 @@ class Main_Demand_Series_Times():
                 name_folder = name_folder + period + "/"
                 self.functions.validate_path(name_folder)
 
-                # Proceso: Guardado de archivo csv - final
-                self.queries.save_data_file_csv(data_final, name_folder, name_file = name_file + "_final")
+                # Proceso: Guardado de archivo csv - classifier demand & inventory abc_xyz
+                self.queries.save_data_file_csv(data_final, name_folder, name_file = name_file + "_classifier")
 
-                # Proceso: Guardado de archivo csv - detail
-                self.queries.save_data_file_csv(detail_data_gran, name_folder, name_file = name_file + "_detail")
+                # Proceso: Guardado de archivo csv - detail classifier demand
+                self.queries.save_data_file_csv(detail_data_gran, name_folder, name_file = name_file + "_classifier_detail")
+
+                # Proceso: Guardado de archivo csv - inventory abc
+                #self.queries.save_data_file_csv(data_final_abc, name_folder, name_file = name_file + "_abc")
+
+                # Proceso: Guardado de archivo csv - detail inventory abc_xyz
+                self.queries.save_data_file_csv(detail_data_abc, name_folder, name_file = name_file + "_abc_detail")
 
                 # Proceso: Guardado de archivo excel
-                self.queries.save_data_file_excel(data_final, detail_data_gran, name_folder)
+                self.queries.save_data_file_excel(data_final, detail_data_gran, detail_data_abc, name_folder)
 
             else:
                 self.queries.save_data_bd(detail_data_gran)
-            print("---"*20)
+                print("---"*20)
 
+            #"""
             # Transformacion de tipo de valor
             fil_data = []
             for idx, col in enumerate(col_gran):
@@ -340,14 +428,16 @@ class Main_Demand_Series_Times():
 
                 # Generacion de identificador
                 idx += 1
-                col_name = "label_" + str(idx)
+                col_name = "label_gran_" + str(idx)
                 data[col_name] = data[fil_data].apply("_".join, axis = 1)
 
                 # Join del tipo de categoria por granularidad
                 #data = pd.merge(data, data_final[["label", "category", "granularity"]], how = "left", left_on = col_name, right_on = 'label')
-                data = pd.merge(data, data_final[["label", "category"]], how = "left", left_on = col_name, right_on = 'label')
+                #data = pd.merge(data, data_final[["label", "category_behavior", "forecastability"]], how = "left", left_on = col_name, right_on = 'label')
+                data = pd.merge(data, data_final[["label", "category_behavior"]], how = "left", left_on = col_name, right_on = 'label')
 
-                data.rename(columns = {"category": "category_" + str(idx)}, inplace = True)
+                data.rename(columns = {"category_behavior": "cat_beh_gran_" + str(idx)}, inplace = True)
+                #data.rename(columns = {"category_behavior": "cat_beh_gran_" + str(idx), "forecastability": "fsct_gran_" + str(idx)}, inplace = True)
                 #data.rename(columns = {"category": "category_" + str(idx), "granularity": "granularity_" + str(idx)}, inplace = True)
                 data.drop("label", axis = 1, inplace = True)
 
@@ -355,6 +445,7 @@ class Main_Demand_Series_Times():
             data.to_csv(self.path + "data_cat.csv", index = False)
             print("---"*20)
             #print(data.isnull().sum())
+            #"""
 
             end_time = time()
             print('\n >>>> El analisis tardo <<<<')

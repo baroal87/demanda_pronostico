@@ -4,6 +4,7 @@
 import pandas as pd
 import numpy as np
 import math
+import sys
 from pandas import ExcelWriter
 from dateutil.relativedelta import relativedelta
 
@@ -13,6 +14,7 @@ class Queries():
     def __init__(self, path, test):
         self.path = path
         self.test = test
+        self.miles_translator = str.maketrans(".,", ".,")
     
     # Modulo: Extraccion de datos por fuente (API)
     def get_data_netezza(self):
@@ -36,69 +38,42 @@ class Queries():
 
         return data
 
-    # Modulo: Computo de total de dias, semanas o meses
-    def get_compute_dif_dates(self, data, columns, col_time, period = "month", limit_date = 6, function = None):
-        max_date = data[col_time].max()
-        # Determinacion del limite de observaciones activas (6 meses)
-        limit_date_ref = max_date + relativedelta(months = - limit_date)
-        #print(max_date, limit_date_ref)
+    # Modulo: Agrupamiento de los precios y ventas por granularidad
+    def get_grouped_data_ABC(self, data, col_gran, col_obs_abc):
+        # Agrupamiento y computo de los precios y ventas por granularidad
+        data = data.groupby(col_gran).agg(price = (col_obs_abc[0], 'mean'), sales = (col_obs_abc[1], 'sum')).reset_index()
 
-        data_active = data.copy()
-        data_active = data_active[data_active[col_time] >= limit_date_ref]
-        data_active['month'] = data_active[col_time].dt.month
-        col = columns[:-1]
-        col.append("month")
-        data_active = data_active[col].drop_duplicates()
-        data_active = data_active.groupby(columns[:-1]).agg({"month": 'count'}).reset_index()
+        # Computo de los ingresos
+        data["revenue"] = data.price * data.sales
+        data["revenue"] = data["revenue"].round()
+        data["revenue"] = data["revenue"].astype(int)
 
-        # Transformacion de tipo de valor
-        for col in data_active[columns[:-1]]:
-            data_active[col] = data_active[col].astype(str)
+        # Transformaccion del tipo de formato a date y extraccion de los meses y años por fecha
+        data["fecha"] = pd.to_datetime(data["fecha"])
+        data['week'] = data["fecha"].dt.isocalendar().week
+        data['month'] = data["fecha"].dt.month
+        data['year'] = data["fecha"].dt.year
 
-        # Generacion de identificador
-        data_active["label"] = data_active[columns[:-1]].apply("_".join, axis = 1)
-        data_active["active"] = np.where(data_active["month"] >= limit_date, 1, 0)
-        data_active = data_active[["label", "active"]].drop_duplicates()
+        return data
 
-        # Agrupamento por min y max fecha
-        date = data.groupby(columns[:-1]).agg(start = (col_time, 'min'), end = (col_time, 'max')).reset_index()
+    # Modulo:
+    def get_grouped_data_model(self, data, col_gran, var_obs, type_model = 2):
+        if type_model == 1:
+            #data = data.groupby(col_gran[:-1]).agg(date = (col_gran[-1], 'min'), sales = (var_obs[1], 'sum')).reset_index()
+            data = data.groupby(col_gran).agg(sales = (var_obs[1], 'sum')).reset_index()
+            #data.rename(columns = {"date": col_gran[-1]}, inplace = True)
 
-        # Transformacion de tipo de valor
-        for col in date[columns[:-1]]:
-            date[col] = date[col].astype(str)
+        elif type_model == 2:
+            data = data.groupby(col_gran).agg(price = (var_obs[0], 'mean'), sales = (var_obs[1], 'sum')).reset_index()
+            data.price = data.price.round(2)
+            data.sales = data.sales.round()
 
-        # Computo del total de dias
-        if period == "daily":
-            date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'D')
-            date.period = date.period.apply(lambda x: int(round(x, 0)))
-
-        # Computo del total de meses
-        elif period == "month":
-            date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'M')
-            date.period = date.period.apply(lambda x: math.ceil(x))
-            date.period = date.period + 1
-
-        # # Computo del total de semanas
         else:
-            date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'W')
-            date.period = date.period.apply(lambda x: int(round(x, 0)))
+            print("\n >>> Error: Modelo no seleccionado !!!")
+            sys.exit()
 
-        # Generacion de identificador
-        date["label"] = date[columns[:-1]].apply("_".join, axis = 1)
+        return data
 
-        # Determinacion del limite de observaciones activas (6 meses)
-        #limit_date = max_date + relativedelta(months = limit_date)
-        #print(max_date, limit_date)
-        #date["active"] = 0
-        #date.loc[date.end >= limit_date, "active"] = 1
-        date = pd.merge(date, data_active, how = "left", on = ["label"])
-        
-        date = function.identify_periods(date.copy(), period)
-        #print(date.active.unique())
-        #print(date.flag_periods.unique())
-
-        return date
-    
     # Modulo: Determinacion del nombre y guardado del dataframe resultante (Archivo)
     def save_data_file_csv(self, data, name_folder, name_file):
         if not self.test:
@@ -123,7 +98,7 @@ class Queries():
             print(" >> Archivo Guardado correctamente")
 
     # Modulo: Guardado de un archivo excel
-    def save_data_file_excel(self, data_demand, data_detail, name_folder):
+    def save_data_file_excel(self, data_final, data_detail, detail_data_abc_xyz, name_folder):
         if not self.test:
             print("\n >> Proceso de guardado (Archivo - Excel)")
             name_file = input("\n Ingrese el nombre del archivo: ")
@@ -140,10 +115,15 @@ class Queries():
 
             path = self.path + name_folder
             with pd.ExcelWriter(path + name_file + ".xlsx", engine = "openpyxl") as writer:
-                data_demand.to_excel(writer, sheet_name = 'demand_classifier', index = False)
-                data_detail.to_excel(writer, sheet_name = 'demand_detail', index = False)
+                data_final.to_excel(writer, sheet_name = 'data_final', index = False)
+                data_detail.to_excel(writer, sheet_name = 'demand_classifier_detail', index = False)
+                detail_data_abc_xyz.to_excel(writer, sheet_name = 'inventory_abc_xyz_detail', index = False)
+
+                #data_final_abc.total_revenue = data_final_abc.total_revenue.apply(lambda x: f"{x:,}".translate(self.miles_translator))
+                #data_final_abc.to_excel(writer, sheet_name = 'classifier_abc', index = False)
 
             print(" >> Archivo Guardado correctamente")
+            print("---"*20)
 
     # Modulo: Determinacion del nombre y guardado del dataframe resultante (BD)
     def save_data_bd(self, data):
