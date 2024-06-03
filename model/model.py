@@ -46,6 +46,14 @@ from skforecast.ForecasterAutoreg import ForecasterAutoreg
 from skforecast.model_selection import grid_search_forecaster
 from skforecast.model_selection import backtesting_forecaster
 
+#from numba import jit, cuda
+
+#import torch
+
+#use_cuda = torch.cuda.is_available()
+#device = torch.device("cuda" if use_cuda else "cpu")
+#print("Device: ",device)
+
 class Model_Series_Times():
 
     # Modulo: Constructor
@@ -178,7 +186,8 @@ class Model_Series_Times():
                         'objective': ['regression'],
                         'feature_fraction': [0.7],
                         'bagging_fraction': [0.6, 0.7, 0.8],
-                        "num_threads": [6],
+                        #"num_threads": [6],
+                        'device': ['gpu'],
                         #"force_col_wise": [True],
                         "verbose": [-1]}
 
@@ -206,7 +215,8 @@ class Model_Series_Times():
                     #"od_wait": 100, #[100],
                     "one_hot_max_size": [40, 60], # 40
                     "l2_leaf_reg": [10, 15], # 15
-                    "thread_count": [6], #10
+                    #"thread_count": [6], #10
+                    "task_type": ["GPU"],
                     "logging_level": ["Silent"]}
             
             cat = CatBoostRegressor()
@@ -222,6 +232,7 @@ class Model_Series_Times():
 
         return best_params, preprocessor
 
+    #@jit(target_backend='cuda', nopython=True)
     # Modulo: Modelo (Light Gradient-Boosting Machine - LGBM) para la prediccion de forecast
     def get_model_LGBM(self, data, columns_num, columns_cat, col_pred):
         column = columns_cat + columns_num
@@ -272,6 +283,7 @@ class Model_Series_Times():
 
         return data_metric
     
+    #@jit(target_backend='cuda', nopython=True)
     # Modulo: Modelo Catboost
     def get_model_CatBoost(self, data, columns_num, columns_cat, col_pred):
         # Concatenacion de las valriables para las filtraciones del historico
@@ -328,6 +340,7 @@ class Model_Series_Times():
 
         return data_metric
 
+    #@jit(target_backend='cuda', nopython=True)
     # Modulo: Modelo Prophet
     def get_model_prophet(self, data, col_serie):
         #data[col_serie[:-1]] = data[col_serie[:-1]].astype(str)
@@ -392,6 +405,7 @@ class Model_Series_Times():
 
         return data_metric
 
+    #@jit(target_backend='cuda', nopython=True)
     # Modulo: Modelo Auto Arima
     def get_model_autoarima(self, data, col_serie):
         data = data.dropna().reset_index(drop = True)
@@ -470,6 +484,7 @@ class Model_Series_Times():
 
         return data_metric
 
+    #@jit(target_backend='cuda', nopython=True)
     # Modulo:
     def get_models_statsForecast(self, data, var_obs):
         name_col_transf = var_obs[1] + "_scaled"

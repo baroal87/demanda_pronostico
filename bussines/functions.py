@@ -960,15 +960,18 @@ class Functions():
     def get_time_process(self, seg):
         if seg < 60:
             print(" >>> Tiempo: {} seg.".format(seg))
+            return "{} seg".format(seg)
 
         elif (seg >= 60) & (seg < 3600):
             minutes = int(seg / 60)
             seg = int(seg % 60)
             if seg == 0:
                 print(" >>> Tiempo: {} min.".format(minutes))
+                return "{} min".format(minutes)
 
             else:
                 print(" >>> Tiempo: {} min - {} seg.".format(minutes, seg))
+                return "{} min - {} seg".format(minutes, seg)
 
         elif seg >= 3600:
             hour = int(seg / 3600)
@@ -977,9 +980,12 @@ class Functions():
 
             if (minutes == 0) & ((seg == 0) | (seg != 0)):
                 print(" >>> Tiempo: {} hr(s).".format(hour))
+                return "{} hr(s)".format(hour)
 
             elif (minutes != 0) & (seg == 0):
                 print(" >>> Tiempo: {} h - {} min.".format(hour, minutes))
+                return "{} h - {} min".format(hour, minutes)
 
             else:
                 print(" >>> Tiempo: {} h - {} min - {} seg.".format(hour, minutes, seg))
+                return "{} h - {} min - {} seg".format(hour, minutes, seg)

@@ -285,7 +285,7 @@ class Main_Demand_Series_Times():
 
     def main(self):
         # Bandera de prueba
-        test = True
+        test = False
         try:
             start_time = time()
         
@@ -322,7 +322,8 @@ class Main_Demand_Series_Times():
             col_serie = ['fecha', 'sales']
             col_gran = ['dept_nbr', 'store_nbr'] #'dept_nbr',
             col_obs_abc = ['price', "sales"]
-            name_file = "data_Atom_agu_3.csv"
+            #name_file = "data_Atom_agu_3.csv"
+            name_file = "data_Atom_agu.csv"
             
             data = self.queries.get_data_file(name_file)
             data = data.dropna()
