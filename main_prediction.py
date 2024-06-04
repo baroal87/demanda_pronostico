@@ -22,6 +22,10 @@ warnings.simplefilter("ignore", category = DeprecationWarning)
 warnings.filterwarnings('ignore', message = 'Unverified HTTPS request')
 warnings.filterwarnings('ignore', message = 'SettingWithCopyWarning')
 warnings.simplefilter(action = 'ignore', category = FutureWarning)
+warnings.filterwarnings('ignore', message = 'ConvergenceWarning')
+
+from sklearn.exceptions import ConvergenceWarning
+ConvergenceWarning('ignore')
 os.environ["PYTHONIOENCODING"] = "utf-8"
 
 import logging
@@ -100,24 +104,36 @@ class Main_Model_Prediction():
                 for name, group in df_model_1.groupby(segment):
                     #print(group.head(2))
                     start_time_model = time()
-                    data_metric = self.model.get_models_statsForecast(group.copy(), self.col_serie)
+                    data_metric, col_pred = self.model.get_models_statsForecast(group.copy(), self.col_serie)
                     data_metric["label"] = list(name)[0]
                     end_time_model = time()
                     data_metric["time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
-                    metric_name = str(list(name)[0]) + "-AutoArima_stats"
-                    data_frame_metric[metric_name] = data_metric
-
+                    
+                    print(data_metric)
+                    for col in col_pred:
+                        #metric_name = str(list(name)[0]) + "-AutoArima_stats"
+                        metric_name = str(list(name)[0]) + col
+                        data_frame_metric[metric_name] = data_metric[data_metric.model == col].drop("model", axis = 1)
+                    
                     start_time_model = time()
-                    data_metric = self.model.get_model_autoarima(group.copy(), col_serie = self.col_serie)
+                    data_metric = self.model.get_model_Arima(group.copy(), self.col_serie)
                     data_metric["label"] = list(name)[0]
                     end_time_model = time()
                     data_metric["time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
-                    metric_name = str(list(name)[0]) + "-AutoArima_normal"
+                    metric_name = str(list(name)[0]) + "-Arima"
                     data_frame_metric[metric_name] = data_metric
 
+                    #start_time_model = time()
+                    #data_metric = self.model.get_model_autoarima(group.copy(), col_serie = self.col_serie)
+                    #data_metric["label"] = list(name)[0]
+                    #end_time_model = time()
+                    #data_metric["time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
+                    #metric_name = str(list(name)[0]) + "-AutoArima_normal"
+                    #data_frame_metric[metric_name] = data_metric
+
                     start_time_model = time()
-                    #col_serie = [period, "year", self.col_serie[1]]
-                    data_metric = self.model.get_model_prophet(group, col_serie = self.col_serie)
+                    col_serie = [period, "year", self.col_serie[1]]
+                    data_metric = self.model.get_model_prophet(group.copy(), col_serie = self.col_serie)
                     data_metric["label"] = list(name)[0]
                     end_time_model = time()
                     data_metric["time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
@@ -127,6 +143,7 @@ class Main_Model_Prediction():
                     #self.model.get_model_forecasters(group, self.col_serie)
                     #break
  
+                #"""
                 print("\n >>> DataFrame: Grouped - Parte 2 <<< \n")
                 col = segment.copy()
                 col.extend([self.period, "year"])
@@ -160,6 +177,7 @@ class Main_Model_Prediction():
                     metric_name = str(list(name)[0]) + "-CatBoost"
                     data_frame_metric[metric_name] = data_metric
                     #break
+                #"""
                 #break
 
             data_metric = pd.DataFrame()
@@ -187,7 +205,7 @@ class Main_Model_Prediction():
             name_folder = name_folder + period + "/"
             self.functions.validate_path(name_folder)
             
-            data_metric.to_csv(self.path + "data_metrics.csv", index = False)
+            #data_metric.to_csv(self.path + "data_metrics.csv", index = False)
             self.queries.save_data_file_csv(data_metric, name_folder, name_file = name_file + "_metrics")
 
             end_time = time()
