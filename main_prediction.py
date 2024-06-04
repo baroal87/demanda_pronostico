@@ -92,7 +92,8 @@ class Main_Model_Prediction():
                 print(" > Variables analizar: {}\n".format(df_model_1.columns.tolist()))
                 df_model_1[segment] = df_model_1[segment].astype(str)
                 df_model_1["segment"] = df_model_1[segment].apply("_".join, axis = 1)
-                df_model_1[self.col_serie[1]] = df_model_1[self.col_serie[1]].astype(int)
+                #df_model_1[self.col_serie[1]] = df_model_1[self.col_serie[1]].astype(int)
+                df_model_1 = df_model_1[df_model_1[self.col_serie[1]] > 0]
 
                 #df.drop(segment, axis = 1, inplace = True)
                 #df = df.set_index(["index"])
@@ -100,7 +101,7 @@ class Main_Model_Prediction():
                 print(df_model_1.shape)
                 print("---"*30)
 
-                print("\n >>> Modelos: Prophet - AutoArima <<< \n")
+                print("\n >>> Modelos: Prophet, AutoArima, ARIMA & Croston <<< \n")
                 for name, group in df_model_1.groupby(segment):
                     #print(group.head(2))
                     start_time_model = time()
@@ -108,13 +109,12 @@ class Main_Model_Prediction():
                     data_metric["label"] = list(name)[0]
                     end_time_model = time()
                     data_metric["time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
-                    
-                    print(data_metric)
+
                     for col in col_pred:
                         #metric_name = str(list(name)[0]) + "-AutoArima_stats"
                         metric_name = str(list(name)[0]) + col
                         data_frame_metric[metric_name] = data_metric[data_metric.model == col].drop("model", axis = 1)
-                    
+
                     start_time_model = time()
                     data_metric = self.model.get_model_Arima(group.copy(), self.col_serie)
                     data_metric["label"] = list(name)[0]

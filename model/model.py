@@ -192,7 +192,7 @@ class Model_Series_Times():
                         'feature_fraction': [0.7],
                         'bagging_fraction': [0.6, 0.7, 0.8],
                         #"num_threads": [6],
-                        #'device': ['gpu'],
+                        'device': ['gpu'],
                         #"force_col_wise": [True],
                         "verbose": [-1]}
 
@@ -221,7 +221,7 @@ class Model_Series_Times():
                     "one_hot_max_size": [40, 60], # 40
                     "l2_leaf_reg": [10, 15], # 15
                     #"thread_count": [6], #10
-                    #"task_type": ["GPU"],
+                    "task_type": ["GPU"],
                     "logging_level": ["Silent"]}
             
             cat = CatBoostRegressor()
