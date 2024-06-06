@@ -3,7 +3,10 @@
 
 import pandas as pd
 import numpy as np
+import math
+import sys
 from pandas import ExcelWriter
+from dateutil.relativedelta import relativedelta
 
 class Queries():
     
@@ -11,6 +14,7 @@ class Queries():
     def __init__(self, path, test):
         self.path = path
         self.test = test
+        self.miles_translator = str.maketrans(".,", ".,")
     
     # Modulo: Extraccion de datos por fuente (API)
     def get_data_netezza(self):
@@ -31,6 +35,42 @@ class Queries():
         name_col = var_obs + "_sum"
         #data.rename(columns = {'sales_sum': 'sales'}, inplace = True)
         data.rename(columns = {name_col: var_obs}, inplace = True)
+
+        return data
+
+    # Modulo: Agrupamiento de los precios y ventas por granularidad
+    def get_grouped_data_ABC(self, data, col_gran, col_obs_abc):
+        # Agrupamiento y computo de los precios y ventas por granularidad
+        data = data.groupby(col_gran).agg(price = (col_obs_abc[0], 'mean'), sales = (col_obs_abc[1], 'sum')).reset_index()
+
+        # Computo de los ingresos
+        data["revenue"] = data.price * data.sales
+        data["revenue"] = data["revenue"].round()
+        data["revenue"] = data["revenue"].astype(int)
+
+        # Transformaccion del tipo de formato a date y extraccion de los meses y años por fecha
+        data["fecha"] = pd.to_datetime(data["fecha"])
+        data['week'] = data["fecha"].dt.isocalendar().week
+        data['month'] = data["fecha"].dt.month
+        data['year'] = data["fecha"].dt.year
+
+        return data
+
+    # Modulo:
+    def get_grouped_data_model(self, data, col_gran, var_obs, type_model = 2):
+        if type_model == 1:
+            #data = data.groupby(col_gran[:-1]).agg(date = (col_gran[-1], 'min'), sales = (var_obs[1], 'sum')).reset_index()
+            data = data.groupby(col_gran).agg(sales = (var_obs[1], 'sum')).reset_index()
+            #data.rename(columns = {"date": col_gran[-1]}, inplace = True)
+
+        elif type_model == 2:
+            data = data.groupby(col_gran).agg(price = (var_obs[0], 'mean'), sales = (var_obs[1], 'sum')).reset_index()
+            data.price = data.price.round(2)
+            data.sales = data.sales.round()
+
+        else:
+            print("\n >>> Error: Modelo no seleccionado !!!")
+            sys.exit()
 
         return data
 
@@ -58,7 +98,7 @@ class Queries():
             print(" >> Archivo Guardado correctamente")
 
     # Modulo: Guardado de un archivo excel
-    def save_data_file_excel(self, data_demand, data_detail, name_folder):
+    def save_data_file_excel(self, data_final, data_detail, detail_data_abc_xyz, data_metric, name_folder):
         if not self.test:
             print("\n >> Proceso de guardado (Archivo - Excel)")
             name_file = input("\n Ingrese el nombre del archivo: ")
@@ -75,10 +115,16 @@ class Queries():
 
             path = self.path + name_folder
             with pd.ExcelWriter(path + name_file + ".xlsx", engine = "openpyxl") as writer:
-                data_demand.to_excel(writer, sheet_name = 'demand_classifier', index = False)
-                data_detail.to_excel(writer, sheet_name = 'demand_detail', index = False)
+                data_final.to_excel(writer, sheet_name = 'data_final', index = False)
+                data_detail.to_excel(writer, sheet_name = 'demand_classifier_detail', index = False)
+                detail_data_abc_xyz.to_excel(writer, sheet_name = 'inventory_abc_xyz_detail', index = False)
+                data_metric.to_excel(writer, sheet_name = 'metrics_models_detail', index = False)
+
+                #data_final_abc.total_revenue = data_final_abc.total_revenue.apply(lambda x: f"{x:,}".translate(self.miles_translator))
+                #data_final_abc.to_excel(writer, sheet_name = 'classifier_abc', index = False)
 
             print(" >> Archivo Guardado correctamente")
+            print("---"*20)
 
     # Modulo: Determinacion del nombre y guardado del dataframe resultante (BD)
     def save_data_bd(self, data):
