@@ -12,13 +12,23 @@ import traceback
 from data.data import Queries
 #from connection.connect import Conexion
 from bussines.functions import Functions
+from model.model import Model_Series_Times
 
 import warnings
 warnings.simplefilter("ignore", category = DeprecationWarning)
 warnings.filterwarnings('ignore', message = 'Unverified HTTPS request')
 warnings.filterwarnings('ignore', message = 'SettingWithCopyWarning')
+warnings.filterwarnings('ignore', message = 'UserWarning')
 warnings.simplefilter(action = 'ignore', category = FutureWarning)
 os.environ["PYTHONIOENCODING"] = "utf-8"
+
+from sklearn.exceptions import ConvergenceWarning
+ConvergenceWarning('ignore')
+
+import logging
+cmdstanpy_logger = logging.getLogger("cmdstanpy")
+logging.getLogger('fbprophet').setLevel(logging.WARNING) 
+cmdstanpy_logger.disabled = True
 
 pd.set_option('display.max_columns', None)
 pd.options.mode.chained_assignment = None
@@ -258,6 +268,7 @@ class Main_Demand_Series_Times():
 
         return data_frame_metric
 
+    # Modulo:
     def data_classify_abc(self, data, col_obs_abc, col_gran, col_serie, period):
         granularity = []
         data_frame_abc = {}
@@ -283,6 +294,133 @@ class Main_Demand_Series_Times():
             
         return data_frame_abc
 
+    # Modulo:
+    def model_training(self, data, data_demand, col_gran, col_serie, col_obs_abc, period):
+        data = self.functions.set_catgory_data(data, data_demand, col_gran)
+        # Identificador de columnas (cat_beh_gran & fsct_gran)
+        size = len(col_gran)
+        columns = data.columns.tolist()
+        index = len(col_gran) * size
+        col_cat = columns[-index:]
+        fill_data = col_gran + col_serie + [col_obs_abc[0]] + col_cat
+
+        col_cat = [col_cat[i: i + size] for i in range(0, len(col_cat), size)]
+        print("\n >> Columnas: ", fill_data)
+        print(" >> Segmentos catalogadas: {}\n".format(col_cat))
+
+        data = data[fill_data]
+        data = data[data[col_serie[1]] > 0]
+        data[col_serie[0]] = pd.to_datetime(data[col_serie[0]])
+        data['week'] = data[col_serie[0]].dt.isocalendar().week
+        data['month'] = data[col_serie[0]].dt.month
+        data['year'] = data[col_serie[0]].dt.year
+        print(data.head())
+        print("---"*30, "\n")
+
+        data_frame_metric = {}
+        for idx, segment in enumerate(col_cat):
+            print("\n >>> DataFrame: Grouped - Parte 1 <<<\n")
+            col = segment.copy()
+            col.append(col_serie[0])
+            #print(col)
+            df_model_1 = self.queries.get_grouped_data_model(data.copy(), col_gran = col, var_obs = col_serie, type_model = 1)
+            print(" > Variables analizar: {}\n".format(df_model_1.columns.tolist()))
+            df_model_1[segment] = df_model_1[segment].astype(str)
+            df_model_1["segment"] = df_model_1[segment].apply("_".join, axis = 1)
+            df_model_1 = df_model_1[df_model_1[col_serie[1]] > 0]
+
+            print(df_model_1.head())
+            print(df_model_1.shape)
+            print("---"*30)
+
+            print("\n >>> Modelos: Prophet, AutoArima, ARIMA & Croston <<< \n")
+            for name, group in df_model_1.groupby(segment):
+                start_time_model = time()
+                data_metric, col_pred = self.model.get_models_statsForecast(group.copy(), col_serie)
+                data_metric["label"] = list(name)[0]
+                end_time_model = time()
+                data_metric["seconds"] = round(end_time_model - start_time_model, 2)
+                data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
+
+                for col in col_pred:
+                    metric_name = str(list(name)[0]) + "-" + col
+                    data_frame_metric[metric_name] = data_metric[data_metric.model == col].drop("model", axis = 1)
+
+                start_time_model = time()
+                data_metric = self.model.get_model_Arima(group.copy(), col_serie)
+                data_metric["label"] = list(name)[0]
+                end_time_model = time()
+                data_metric["seconds"] = round(end_time_model - start_time_model, 2)
+                data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
+                metric_name = str(list(name)[0]) + "-Arima"
+                data_frame_metric[metric_name] = data_metric
+
+                #start_time_model = time()
+                #data_metric = self.model.get_model_autoarima(group.copy(), col_serie = col_serie)
+                #data_metric["label"] = list(name)[0]
+                #end_time_model = time()
+                #data_metric["seconds"] = round(end_time_model - start_time_model, 2)
+                #data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
+                #metric_name = str(list(name)[0]) + "-AutoArima_normal"
+                #data_frame_metric[metric_name] = data_metric
+
+                start_time_model = time()
+                #col_serie_ = [period, "year", col_serie[1]]
+                data_metric = self.model.get_model_prophet(group.copy(), col_serie = col_serie)
+                data_metric["label"] = list(name)[0]
+                end_time_model = time()
+                data_metric["seconds"] = round(end_time_model - start_time_model, 2)
+                data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
+                metric_name = str(list(name)[0]) + "-Prophet"
+                data_frame_metric[metric_name] = data_metric
+
+                #self.model.get_model_forecasters(group, self.col_serie)
+                #break
+
+            print("\n >>> DataFrame: Grouped - Parte 2 <<< \n")
+            col = segment.copy()
+            col.extend([period, "year"])
+            df_model_2 = self.queries.get_grouped_data_model(data.copy(), col_gran = col, var_obs = col_obs_abc, type_model = 2)
+            print(" > Variables analizar: {}\n".format(df_model_2.columns.tolist()))
+            print(df_model_2.head())
+            print(df_model_2.shape)
+            print("---"*30)
+            columns_num = [col_obs_abc[0]]
+            columns_cat = [segment[0], period, "year"]
+
+            print("\n >>> Modelos: LGBM - CatBoost <<< \n")
+            for name, group in df_model_2.groupby(segment):
+                start_time_model = time()
+                data_metric = self.model.get_model_LGBM(group.copy(), columns_num, columns_cat, col_pred = col_serie[1])
+                data_metric["label"] = list(name)[0]
+                end_time_model = time()
+                data_metric["seconds"] = round(end_time_model - start_time_model, 2)
+                data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
+                metric_name = str(list(name)[0]) + "-LGBM"
+                data_frame_metric[metric_name] = data_metric
+                
+                start_time_model = time()
+                data_metric = self.model.get_model_CatBoost(group.copy(), columns_num, columns_cat, col_pred = col_serie[1])
+                data_metric["label"] = list(name)[0]
+                end_time_model = time()
+                data_metric["seconds"] = round(end_time_model - start_time_model, 2)
+                data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
+                #metric_name = self.col_gran[idx] + "-CatBoost"
+                metric_name = str(list(name)[0]) + "-CatBoost"
+                data_frame_metric[metric_name] = data_metric
+                #break
+            #break
+        
+        data_metric = pd.DataFrame()
+        for index, df in data_frame_metric.items():
+            index = str(index).split("-")
+            df["type_model"] = index[-1]
+            data_metric = pd.concat([data_metric, df], axis = 0, ignore_index = False)
+
+        data_metric = data_metric.reset_index(drop = True)
+
+        return data_metric
+
     def main(self):
         # Bandera de prueba
         test = False
@@ -292,6 +430,7 @@ class Main_Demand_Series_Times():
             # Incializacion de clases (Metodo Contructor)
             self.queries = Queries(self.path, test)
             self.functions = Functions(self.path, test)
+            self.model = Model_Series_Times(self.path, test)
 
             # Seleccion del tipo de fuente para la extraccion de los datos
             #source_data = self.functions.select_source_data()
@@ -320,7 +459,7 @@ class Main_Demand_Series_Times():
             source_data = 1
             period = "month" # week, month
             col_serie = ['fecha', 'sales']
-            col_gran = ['dept_nbr', 'store_nbr'] #'dept_nbr',
+            col_gran = ['dept_nbr'] #'dept_nbr', 'store_nbr'
             col_obs_abc = ['price', "sales"]
             #name_file = "data_Atom_agu_3.csv"
             name_file = "data_Atom_agu.csv"
@@ -370,7 +509,7 @@ class Main_Demand_Series_Times():
             print("\n > Volumen: ", detail_data_abc.shape)
             print("---"*20)
 
-            print("\n >>> Dataframe: Final <<< \n")
+            print("\n >>> Dataframe: Final - Fase 1 <<< \n")
             #data_final = pd.merge(data_demand, data_final_abc_xyz[["label", "category_abc", "category_xyz", "total_revenue"]], how = "left", on = ["label"])
             data_final = pd.merge(data_demand, data_final_abc[["label", "category_abc", "total_revenue"]], how = "left", on = ["label"])
             data_fsct = self.functions.get_forecastability(data_final.copy())
@@ -384,8 +523,29 @@ class Main_Demand_Series_Times():
             data_final = data_final.reindex(columns, axis = 1)
             print(data_final.head())
             print("\n > Volumen: ", data_final.shape)
-            print("---"*20)
+            print("###"*30)
             #print(data_final[data_final.forecastability == "difficult"])
+            
+            ###########################################
+            print("\n >> Proceso: Entrenamiento, validaciones y seleccion del mejor modelo <<<\n")
+
+            # Proceso: Entrenamientos, validacion y generacion de metricas
+            data_metric = self.model_training(data, data_final, col_gran, col_serie, col_obs_abc, period)
+
+            print("\n >>> DataFrame: Metricas de Modelos <<<\n")
+            print(data_metric.head())
+
+            # Proceso: Seleccion de los modelos predominantes
+            best_models = self.functions.get_evaluate_model(data_metric)
+            print(len(best_models))
+            print(best_models[:10])
+
+            print("\n >>> Dataframe: Final - Fase 2 <<< \n")
+            data_final["models"] = best_models
+            print(data_final.head())
+            print("\n > Volumen: ", data_final.shape)
+            print("###"*30)
+            ###########################################
 
             # Guardado del analisis - Dataframe intervalos de demanda & Dataframe detail
             if source_data == 1:
@@ -413,40 +573,15 @@ class Main_Demand_Series_Times():
                 # Proceso: Guardado de archivo csv - detail inventory abc_xyz
                 self.queries.save_data_file_csv(detail_data_abc, name_folder, name_file = name_file + "_abc_detail")
 
+                # Proceso: Guardado de archivo csv - metrics models
+                self.queries.save_data_file_csv(data_metric, name_folder, name_file = name_file + "_abc")
+
                 # Proceso: Guardado de archivo excel
-                self.queries.save_data_file_excel(data_final, detail_data_gran, detail_data_abc, name_folder)
+                self.queries.save_data_file_excel(data_final, detail_data_gran, detail_data_abc, data_metric, name_folder)
 
             else:
                 self.queries.save_data_bd(detail_data_gran)
                 print("---"*20)
-
-            #"""
-            # Transformacion de tipo de valor
-            fil_data = []
-            for idx, col in enumerate(col_gran):
-                data[col] = data[col].astype(str)
-                fil_data.insert(0, col)
-
-                # Generacion de identificador
-                idx += 1
-                col_name = "label_gran_" + str(idx)
-                data[col_name] = data[fil_data].apply("_".join, axis = 1)
-
-                # Join del tipo de categoria por granularidad
-                #data = pd.merge(data, data_final[["label", "category", "granularity"]], how = "left", left_on = col_name, right_on = 'label')
-                #data = pd.merge(data, data_final[["label", "category_behavior", "forecastability"]], how = "left", left_on = col_name, right_on = 'label')
-                data = pd.merge(data, data_final[["label", "category_behavior"]], how = "left", left_on = col_name, right_on = 'label')
-
-                data.rename(columns = {"category_behavior": "cat_beh_gran_" + str(idx)}, inplace = True)
-                #data.rename(columns = {"category_behavior": "cat_beh_gran_" + str(idx), "forecastability": "fsct_gran_" + str(idx)}, inplace = True)
-                #data.rename(columns = {"category": "category_" + str(idx), "granularity": "granularity_" + str(idx)}, inplace = True)
-                data.drop("label", axis = 1, inplace = True)
-
-            print(data.head())
-            data.to_csv(self.path + "data_cat.csv", index = False)
-            print("---"*20)
-            #print(data.isnull().sum())
-            #"""
 
             end_time = time()
             print('\n >>>> El analisis tardo <<<<')

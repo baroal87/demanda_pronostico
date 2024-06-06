@@ -79,6 +79,7 @@ class Main_Model_Prediction():
             data['year'] = data[self.col_serie[0]].dt.year
             print(data.head())
             print("---"*30, "\n")
+            #"""
 
             data_frame_metric = {}
             for idx, segment in enumerate(col_cat):
@@ -112,7 +113,7 @@ class Main_Model_Prediction():
 
                     for col in col_pred:
                         #metric_name = str(list(name)[0]) + "-AutoArima_stats"
-                        metric_name = str(list(name)[0]) + col
+                        metric_name = str(list(name)[0]) + "-" + col
                         data_frame_metric[metric_name] = data_metric[data_metric.model == col].drop("model", axis = 1)
 
                     start_time_model = time()
@@ -143,7 +144,7 @@ class Main_Model_Prediction():
                     #self.model.get_model_forecasters(group, self.col_serie)
                     #break
  
-                #"""
+                #""
                 print("\n >>> DataFrame: Grouped - Parte 2 <<< \n")
                 col = segment.copy()
                 col.extend([self.period, "year"])
@@ -177,7 +178,7 @@ class Main_Model_Prediction():
                     metric_name = str(list(name)[0]) + "-CatBoost"
                     data_frame_metric[metric_name] = data_metric
                     #break
-                #"""
+                #""
                 #break
 
             data_metric = pd.DataFrame()
@@ -207,6 +208,19 @@ class Main_Model_Prediction():
             
             #data_metric.to_csv(self.path + "data_metrics.csv", index = False)
             self.queries.save_data_file_csv(data_metric, name_folder, name_file = name_file + "_metrics")
+            #"""
+            
+            name_file = "data_Atom_agu"
+            name_folder = "result/"
+            name_folder = name_folder + name_file + "/"
+            name_folder = name_folder + period + "/"
+            data = self.queries.get_data_file(name_file = name_folder + name_file + "_metrics.csv")
+            print(data.head())
+            print("---"*30)
+            
+            best_models = self.functions.get_evaluate_model(data)
+            print(len(best_models))
+            print(best_models[:10])
 
             end_time = time()
             print('\n >>>> El analisis tardo <<<<')

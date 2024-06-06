@@ -737,7 +737,7 @@ class Functions():
 
         # Pivoteo en base al parseo del año/mes sobre las identificadores y sumatoria de los ingresos
         data = data.pivot(index = "label", columns = name_col, values = 'revenue').reset_index().fillna(0)
-        data_xyz = self.get_data_XYZ(data.copy())
+        #data_xyz = self.get_data_XYZ(data.copy())
         print(data.shape)
 
         # Computo del total de los ingresos
@@ -955,6 +955,144 @@ class Functions():
         detail_data_gran["granularity"] = granularity
 
         return detail_data_gran
+
+    def set_catgory_data(self, data, data_demand, col_gran):
+        # Transformacion de tipo de valor
+        fil_data = []
+        for idx, col in enumerate(col_gran):
+            data[col] = data[col].astype(str)
+            fil_data.insert(0, col)
+
+            # Generacion de identificador
+            idx += 1
+            col_name = "label_gran_" + str(idx)
+            data[col_name] = data[fil_data].apply("_".join, axis = 1)
+
+            # Join del tipo de categoria por granularidad
+            data = pd.merge(data, data_demand[["label", "category_behavior"]], how = "left", left_on = col_name, right_on = 'label')
+            data.rename(columns = {"category_behavior": "cat_beh_gran_" + str(idx)}, inplace = True)
+            data.drop("label", axis = 1, inplace = True)
+
+        return data
+
+    def get_best_metric(self, values, metric):
+        """
+        MAE (Error absoluto medio) -> Diferencia entre pronostico y real (promedio del error absoluto)
+        RMSE (Raiz del error cuadratico medio) -> Magnitud del promedio errores y la desviacion del valor real (desviacion cuadratica media)
+            + Un valor 0 indica que el modelo tiene un ajuste perfecto
+            + Menor RMSE, mejor serán las predicciones
+        MAPE (Error porcentaje medio absoluto) -> Calculo de errores relativos para comparar la precision de las predicciones (porcentaje absoluto pronosticos)
+            + Porcenjage bajo (modelo ajustado)
+        R2 (Coef determinacion) -> Variacion de la variable dependiente (prediccion) sobre la variable independiente (ajuste del modelo)
+            + Datos sesgados, ajustes son buenos (parametros) o modelo adecuado
+            + r2: < 0.5 (malo), 0.5 - 0.8 (moderado) y > 0.8 (bueno)
+        """
+        if metric == "mae":
+            values.sort(reverse = False)
+            min_mae = min(values)
+            #print(min_mae)
+            return min_mae
+
+        elif metric == "rmse":
+            values.sort(reverse = False)
+            min_rmse = min(values)
+            #print(min_rmse)
+            return min_rmse
+
+        elif metric == "mape":
+            values.sort(reverse = False)
+            min_mape = min(values)
+            #print(min_mape)
+            return min_mape
+
+        elif metric == "acc":
+            values.sort(reverse = True)
+            max_acc = max(values)
+            #print(max_acc)
+            return max_acc
+
+        elif metric == "r2":
+            values.sort(reverse = True)
+            max_r2 = max(values)
+            #print(max_r2)
+            return max_r2
+
+    # Modulo:
+    def get_evaluate_model(self, data):
+        best_models = []   
+        for label in data['label'].unique():
+            temp = data[data.label == label]
+            #temp.drop(temp.columns.tolist()[-3:], axis = 1, inplace = True)
+            temp.drop(["label", "full_time"], axis = 1, inplace = True)
+            temp = temp.sort_values('type_model', ascending = True)
+
+            # Extraccion de los nombres de las columas (metricas)
+            columns_metrics = temp.columns.tolist()[:-2]
+            #print(columns_metrics)
+
+            # Generacion del catalogo del mejor modelo por metrica
+            models = {}
+            for metric in columns_metrics:
+                result = self.get_best_metric(temp[metric].values.tolist(), metric)
+                models[metric] = temp[temp[metric] == result].type_model.values.tolist()[0]
+
+            #print("\n >> Catalogo del mejor modelo por metrica <<<")
+            #print(models)
+            #print("---"*30)
+
+            # Extraccion de los nombres de los modelo
+            values = list(models.values())
+
+            # Contedor para determinar las apariciones de cada modelo
+            #print("\n >> Catalogo de conteo de modelo mas significativo <<<")
+            count_best_model = dict(zip(values, map(lambda x: values.count(x), values)))
+            #print(count_best_model)
+            #print("---"*30)
+
+            # Identificador del conteo maximo de apariciones del mejor modelo por metrica
+            count_max_model = max(list(count_best_model.values()))
+
+            # Si existe mas de un modelo representativo, determinar el modelo con el menor sesgo
+            if len([i for i in list(count_best_model.values()) if i == count_max_model]) > 1:
+
+                # Identificacion de los modelos mas representativos
+                list_model = []
+                for model, count in count_best_model.items():
+                    if count == count_max_model:
+                        list_model.append(model)
+
+                models = {}
+                df = temp[temp.type_model.isin(list_model)]
+                for metric in columns_metrics:
+                    result = self.get_best_metric(df[metric].values.tolist(), metric)
+                    models[metric] = df[df[metric] == result].type_model.values.tolist()[0]
+
+                # Extraccion de los nombres de los modelo
+                values = list(models.values())
+
+                # Contedor para determinar las apariciones de cada modelo
+                count_best_model = dict(zip(values, map(lambda x: values.count(x), values)))
+
+                # Identificador del conteo maximo de apariciones del mejor modelo por metrica
+                count_max_model = max(list(count_best_model.values()))
+
+                # Si existe mas de un modelo representativo, determinar el modelo por la variable de tiempo
+                if len([i for i in list(count_best_model.values()) if i == count_max_model]) > 1:
+                    print("Validacion por tiempo")
+                    min_sec = min(temp[temp.type_model.isin(list_model)].seconds.values.tolist())
+                    best_models.append(df[df.seconds == min_sec].type_model.values.tolist()[0])
+
+                else:
+                    best_models.append(list(count_best_model.keys())[list(count_best_model.values()).index(count_max_model)])
+
+            # Determinar el modelo mas representativo
+            else:
+                best_models.append(list(count_best_model.keys())[list(count_best_model.values()).index(count_max_model)])
+
+            print("\n >> Mejor modelo ({}): {}".format(label, best_models[-1]))
+            #break
+            
+        return best_models
 
     # Modulo: Computo de tiempos sobre un proceso
     def get_time_process(self, seg):

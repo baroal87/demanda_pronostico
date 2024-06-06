@@ -98,7 +98,7 @@ class Queries():
             print(" >> Archivo Guardado correctamente")
 
     # Modulo: Guardado de un archivo excel
-    def save_data_file_excel(self, data_final, data_detail, detail_data_abc_xyz, name_folder):
+    def save_data_file_excel(self, data_final, data_detail, detail_data_abc_xyz, data_metric, name_folder):
         if not self.test:
             print("\n >> Proceso de guardado (Archivo - Excel)")
             name_file = input("\n Ingrese el nombre del archivo: ")
@@ -118,6 +118,7 @@ class Queries():
                 data_final.to_excel(writer, sheet_name = 'data_final', index = False)
                 data_detail.to_excel(writer, sheet_name = 'demand_classifier_detail', index = False)
                 detail_data_abc_xyz.to_excel(writer, sheet_name = 'inventory_abc_xyz_detail', index = False)
+                data_metric.to_excel(writer, sheet_name = 'metrics_models_detail', index = False)
 
                 #data_final_abc.total_revenue = data_final_abc.total_revenue.apply(lambda x: f"{x:,}".translate(self.miles_translator))
                 #data_final_abc.to_excel(writer, sheet_name = 'classifier_abc', index = False)

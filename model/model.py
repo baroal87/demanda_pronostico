@@ -52,12 +52,7 @@ from skforecast.model_selection import backtesting_forecaster
 from statsmodels.tsa.seasonal import seasonal_decompose
 
 #from numba import jit, cuda
-
 #import torch
-
-#use_cuda = torch.cuda.is_available()
-#device = torch.device("cuda" if use_cuda else "cpu")
-#print("Device: ",device)
 
 class Model_Series_Times():
 
@@ -177,6 +172,10 @@ class Model_Series_Times():
 
         preprocessor = ColumnTransformer(transformers = [('num', numeric_transformer, numeric_features), ('cat', categorical_transformer, categorical_features)])
 
+        #use_cuda = torch.cuda.is_available()
+        #device = torch.device("cuda" if use_cuda else "cpu")
+        #print("\n >> Device: {}\n".format(device))
+
         # Busqueda de hyperparametros mediante modelo LGBM
         if type_model == "LGBM":
             #print("\n >> Model: ", type_model)
@@ -192,9 +191,11 @@ class Model_Series_Times():
                         'feature_fraction': [0.7],
                         'bagging_fraction': [0.6, 0.7, 0.8],
                         #"num_threads": [6],
-                        'device': ['gpu'],
                         #"force_col_wise": [True],
                         "verbose": [-1]}
+
+            #if str(device) == "cuda":
+            #    params['device'] = ['gpu']
 
             lgbm = LGBMRegressor()
             #grid_ = GridSearchCV(lgbm, params, scoring = 'neg_mean_squared_error', cv = 5)
@@ -221,8 +222,10 @@ class Model_Series_Times():
                     "one_hot_max_size": [40, 60], # 40
                     "l2_leaf_reg": [10, 15], # 15
                     #"thread_count": [6], #10
-                    "task_type": ["GPU"],
                     "logging_level": ["Silent"]}
+
+            #if str(device) == "cuda":
+            #    params['task_type'] = ['GPU']
             
             cat = CatBoostRegressor()
             #rsf = RepeatedStratifiedKFold(random_state = 6)
