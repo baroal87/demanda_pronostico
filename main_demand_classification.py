@@ -19,6 +19,8 @@ warnings.simplefilter("ignore", category = DeprecationWarning)
 warnings.filterwarnings('ignore', message = 'Unverified HTTPS request')
 warnings.filterwarnings('ignore', message = 'SettingWithCopyWarning')
 warnings.filterwarnings('ignore', message = 'UserWarning')
+warnings.simplefilter('ignore', category = UserWarning)
+warnings.filterwarnings('ignore', message = "ValueWarning")
 warnings.simplefilter(action = 'ignore', category = FutureWarning)
 os.environ["PYTHONIOENCODING"] = "utf-8"
 
@@ -423,7 +425,7 @@ class Main_Demand_Series_Times():
 
     def main(self):
         # Bandera de prueba
-        test = False
+        test = True
         try:
             start_time = time()
         
@@ -459,7 +461,7 @@ class Main_Demand_Series_Times():
             source_data = 1
             period = "month" # week, month
             col_serie = ['fecha', 'sales']
-            col_gran = ['dept_nbr'] #'dept_nbr', 'store_nbr'
+            col_gran = ['dept_nbr', 'store_nbr'] #'dept_nbr', 'store_nbr'
             col_obs_abc = ['price', "sales"]
             #name_file = "data_Atom_agu_3.csv"
             name_file = "data_Atom_agu.csv"
@@ -510,8 +512,8 @@ class Main_Demand_Series_Times():
             print("---"*20)
 
             print("\n >>> Dataframe: Final - Fase 1 <<< \n")
-            #data_final = pd.merge(data_demand, data_final_abc_xyz[["label", "category_abc", "category_xyz", "total_revenue"]], how = "left", on = ["label"])
-            data_final = pd.merge(data_demand, data_final_abc[["label", "category_abc", "total_revenue"]], how = "left", on = ["label"])
+            data_final = pd.merge(data_demand, data_final_abc[["label", "category_abc", "category_xyz", "total_revenue"]], how = "left", on = ["label"])
+            #data_final = pd.merge(data_demand, data_final_abc[["label", "category_abc", "total_revenue"]], how = "left", on = ["label"])
             data_fsct = self.functions.get_forecastability(data_final.copy())
             data_final = pd.merge(data_final, data_fsct[["label", "forecastability"]], how = "left", on = ["label"])
 
@@ -525,23 +527,29 @@ class Main_Demand_Series_Times():
             print("\n > Volumen: ", data_final.shape)
             print("###"*30)
             #print(data_final[data_final.forecastability == "difficult"])
+            sys.exit()
             
             ###########################################
             print("\n >> Proceso: Entrenamiento, validaciones y seleccion del mejor modelo <<<\n")
 
             # Proceso: Entrenamientos, validacion y generacion de metricas
             data_metric = self.model_training(data, data_final, col_gran, col_serie, col_obs_abc, period)
+            #data_metric = self.queries.get_data_file("result/data_Atom_agu/month/data_Atom_agu_metrics.csv")
 
             print("\n >>> DataFrame: Metricas de Modelos <<<\n")
             print(data_metric.head())
+            print("---"*20)
 
             # Proceso: Seleccion de los modelos predominantes
             best_models = self.functions.get_evaluate_model(data_metric)
-            print(len(best_models))
-            print(best_models[:10])
+            #print(len(best_models))
+            #print(best_models[:10])
+            print(best_models.head())
+            print("\n > Volumen: ", best_models.shape)
+            print("###"*30)
 
             print("\n >>> Dataframe: Final - Fase 2 <<< \n")
-            data_final["models"] = best_models
+            data_final = pd.merge(data_final, best_models, how = "left", on = ["label"])
             print(data_final.head())
             print("\n > Volumen: ", data_final.shape)
             print("###"*30)
