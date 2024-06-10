@@ -179,13 +179,13 @@ class Main_Demand_Series_Times():
             print("\n >> Year: ", year)
 
             # Analisis por la granularidad seleccionada
-            fil_data = col_serie.copy() #["date", "sales"]
+            fill_data = col_serie.copy() #["date", "sales"]
             for col in col_gran:
                 # Filtracion de datos
-                fil_data.insert(0, col)
+                fill_data.insert(0, col)
                 df = data[(data.year >= year)]
-                print("\n > Filtrado por: ", fil_data)
-                df = df[fil_data]
+                print("\n > Filtrado por: ", fill_data)
+                df = df[fill_data]
 
                 # Agrupamiento de valores en base a la variables de observacion seleccionada
                 print("\n >>> DataFrame: Agrupado por la variable - ({}) <<<".format(col_serie[1]))
@@ -270,7 +270,7 @@ class Main_Demand_Series_Times():
 
         return data_frame_metric
 
-    # Modulo:
+    # Modulo: Analisis y generacion de la clasificacion ABC (Inventario) y xyz (ingresos)
     def data_classify_abc(self, data, col_obs_abc, col_gran, col_serie, period):
         granularity = []
         data_frame_abc = {}
@@ -296,9 +296,15 @@ class Main_Demand_Series_Times():
             
         return data_frame_abc
 
-    # Modulo:
-    def model_training(self, data, data_demand, col_gran, col_serie, col_obs_abc, period):
-        data = self.functions.set_catgory_data(data, data_demand, col_gran)
+    # Modulo: Entrenamiento, prediccion, validacion y seleccion del mejor modelo ajustado a la serie
+    def model_training(self, data, data_demand, data_comp_seasonal, col_gran, col_serie, col_obs_abc, period):
+        #select_models = [1, 2, 3, 4, 5 , 6, 7]
+        select_models = [5]
+        data = self.functions.set_catgory_data(data.copy(), data_demand.copy(), col_gran)
+        data_comp_seasonal = pd.merge(data_comp_seasonal, data_demand[["label", "category_behavior", "flag_new"]], how = "left", on = 'label')
+        data_comp_seasonal = data_comp_seasonal[(data_comp_seasonal.flag_new != 1) | (data_comp_seasonal.category_behavior != "N/A")]
+        data_comp_seasonal.drop(["p-value_add", "acf_add", "p-value_mult", "acf_mult", "flag_new", "category_behavior"], axis = 1, inplace = True)
+
         # Identificador de columnas (cat_beh_gran & fsct_gran)
         size = len(col_gran)
         columns = data.columns.tolist()
@@ -337,25 +343,27 @@ class Main_Demand_Series_Times():
 
             print("\n >>> Modelos: Prophet, AutoArima, ARIMA & Croston <<< \n")
             for name, group in df_model_1.groupby(segment):
-                start_time_model = time()
-                data_metric, col_pred = self.model.get_models_statsForecast(group.copy(), col_serie)
-                data_metric["label"] = list(name)[0]
-                end_time_model = time()
-                data_metric["seconds"] = round(end_time_model - start_time_model, 2)
-                data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
+                if (1 in select_models) | (2 in select_models) | (3 in select_models):
+                    start_time_model = time()
+                    data_metric, col_pred = self.model.get_models_statsForecast(group.copy(), col_serie)
+                    data_metric["label"] = list(name)[0]
+                    end_time_model = time()
+                    data_metric["seconds"] = round(end_time_model - start_time_model, 2)
+                    data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
 
-                for col in col_pred:
-                    metric_name = str(list(name)[0]) + "-" + col
-                    data_frame_metric[metric_name] = data_metric[data_metric.model == col].drop("model", axis = 1)
+                    for col in col_pred:
+                        metric_name = str(list(name)[0]) + "-" + col
+                        data_frame_metric[metric_name] = data_metric[data_metric.model == col].drop("model", axis = 1)
 
-                start_time_model = time()
-                data_metric = self.model.get_model_Arima(group.copy(), col_serie)
-                data_metric["label"] = list(name)[0]
-                end_time_model = time()
-                data_metric["seconds"] = round(end_time_model - start_time_model, 2)
-                data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
-                metric_name = str(list(name)[0]) + "-Arima"
-                data_frame_metric[metric_name] = data_metric
+                if 4 in select_models:
+                    start_time_model = time()
+                    data_metric = self.model.get_model_Arima(group.copy(), col_serie)
+                    data_metric["label"] = list(name)[0]
+                    end_time_model = time()
+                    data_metric["seconds"] = round(end_time_model - start_time_model, 2)
+                    data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
+                    metric_name = str(list(name)[0]) + "-Arima"
+                    data_frame_metric[metric_name] = data_metric
 
                 #start_time_model = time()
                 #data_metric = self.model.get_model_autoarima(group.copy(), col_serie = col_serie)
@@ -366,15 +374,16 @@ class Main_Demand_Series_Times():
                 #metric_name = str(list(name)[0]) + "-AutoArima_normal"
                 #data_frame_metric[metric_name] = data_metric
 
-                start_time_model = time()
-                #col_serie_ = [period, "year", col_serie[1]]
-                data_metric = self.model.get_model_prophet(group.copy(), col_serie = col_serie)
-                data_metric["label"] = list(name)[0]
-                end_time_model = time()
-                data_metric["seconds"] = round(end_time_model - start_time_model, 2)
-                data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
-                metric_name = str(list(name)[0]) + "-Prophet"
-                data_frame_metric[metric_name] = data_metric
+                if 5 in select_models:
+                    start_time_model = time()
+                    #col_serie_ = [period, "year", col_serie[1]]
+                    data_metric = self.model.get_model_prophet(group.copy(), col_serie = col_serie, type_seasonal = data_comp_seasonal[data_comp_seasonal.label == list(name)[0]].type_seasonal.values[0])
+                    data_metric["label"] = list(name)[0]
+                    end_time_model = time()
+                    data_metric["seconds"] = round(end_time_model - start_time_model, 2)
+                    data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
+                    metric_name = str(list(name)[0]) + "-Prophet"
+                    data_frame_metric[metric_name] = data_metric
 
                 #self.model.get_model_forecasters(group, self.col_serie)
                 #break
@@ -392,24 +401,25 @@ class Main_Demand_Series_Times():
 
             print("\n >>> Modelos: LGBM - CatBoost <<< \n")
             for name, group in df_model_2.groupby(segment):
-                start_time_model = time()
-                data_metric = self.model.get_model_LGBM(group.copy(), columns_num, columns_cat, col_pred = col_serie[1])
-                data_metric["label"] = list(name)[0]
-                end_time_model = time()
-                data_metric["seconds"] = round(end_time_model - start_time_model, 2)
-                data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
-                metric_name = str(list(name)[0]) + "-LGBM"
-                data_frame_metric[metric_name] = data_metric
+                if 6 in select_models:
+                    start_time_model = time()
+                    data_metric = self.model.get_model_LGBM(group.copy(), columns_num, columns_cat, col_pred = col_serie[1])
+                    data_metric["label"] = list(name)[0]
+                    end_time_model = time()
+                    data_metric["seconds"] = round(end_time_model - start_time_model, 2)
+                    data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
+                    metric_name = str(list(name)[0]) + "-LGBM"
+                    data_frame_metric[metric_name] = data_metric
                 
-                start_time_model = time()
-                data_metric = self.model.get_model_CatBoost(group.copy(), columns_num, columns_cat, col_pred = col_serie[1])
-                data_metric["label"] = list(name)[0]
-                end_time_model = time()
-                data_metric["seconds"] = round(end_time_model - start_time_model, 2)
-                data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
-                #metric_name = self.col_gran[idx] + "-CatBoost"
-                metric_name = str(list(name)[0]) + "-CatBoost"
-                data_frame_metric[metric_name] = data_metric
+                if 7 in select_models:
+                    start_time_model = time()
+                    data_metric = self.model.get_model_CatBoost(group.copy(), columns_num, columns_cat, col_pred = col_serie[1])
+                    data_metric["label"] = list(name)[0]
+                    end_time_model = time()
+                    data_metric["seconds"] = round(end_time_model - start_time_model, 2)
+                    data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
+                    metric_name = str(list(name)[0]) + "-CatBoost"
+                    data_frame_metric[metric_name] = data_metric
                 #break
             #break
         
@@ -422,6 +432,28 @@ class Main_Demand_Series_Times():
         data_metric = data_metric.reset_index(drop = True)
 
         return data_metric
+
+    # Modulo:
+    def plot_graph_series(self, data, col_gran, col_serie, name_file, period):
+        data_comp_seasonal = []
+        fill_data = [col_serie[0]]
+        for gran in col_gran:
+            data[gran] = data[gran].astype(str)
+            fill_data.insert(0, gran)
+            temp = self.queries.grouped_data(data, fill_data, col_serie[1])
+            temp["label"] = temp[fill_data[:-1]].apply("_".join, axis = 1)
+            for label in temp.label.unique().tolist():
+                metrics, seasonal_data = self.functions.get_graph_series_data(temp[temp.label == label][col_serie], col_serie, period)
+                data_comp_seasonal.append({"label": label, "p-value_add": metrics[0], "acf_add": metrics[1], "p-value_mult": metrics[2], "acf_mult": metrics[3], "type_seasonal": metrics[4]})
+
+                gran = "_".join(fill_data[:-1])
+                name_graph = label + "_" + "additive" if metrics[4] == "additive" else label + "_" + "multiplicative"
+                self.queries.save_graph_seasonal(seasonal_data, name_graph, name_file, gran, period, self.functions)
+                #break
+            #break
+
+        data_comp_seasonal = pd.DataFrame.from_dict(data_comp_seasonal)
+        return data_comp_seasonal
 
     def main(self):
         # Bandera de prueba
@@ -480,7 +512,7 @@ class Main_Demand_Series_Times():
             print("###"*30)
 
             # Proceso: Clasificacion de inventario ABC
-            data_frame_abc = self.data_classify_abc(data, col_obs_abc, col_gran, col_serie, period)
+            data_frame_abc = self.data_classify_abc(data.copy(), col_obs_abc, col_gran, col_serie, period)
             print("###"*30)
 
             # Proceso: Generacion de la estractura final del dataframe clasificacion en base a demanda
@@ -525,15 +557,18 @@ class Main_Demand_Series_Times():
             data_final = data_final.reindex(columns, axis = 1)
             print(data_final.head())
             print("\n > Volumen: ", data_final.shape)
+            print("---"*20)
+
+            print("\n >>> Dataframe: Estacionalidades <<< \n")
+            data_comp_seasonal = self.plot_graph_series(data.copy(), col_gran.copy(), col_serie, name_file, period)
+            print(data_comp_seasonal.head())
             print("###"*30)
-            #print(data_final[data_final.forecastability == "difficult"])
-            sys.exit()
             
             ###########################################
             print("\n >> Proceso: Entrenamiento, validaciones y seleccion del mejor modelo <<<\n")
 
             # Proceso: Entrenamientos, validacion y generacion de metricas
-            data_metric = self.model_training(data, data_final, col_gran, col_serie, col_obs_abc, period)
+            data_metric = self.model_training(data, data_final, data_comp_seasonal, col_gran, col_serie, col_obs_abc, period)
             #data_metric = self.queries.get_data_file("result/data_Atom_agu/month/data_Atom_agu_metrics.csv")
 
             print("\n >>> DataFrame: Metricas de Modelos <<<\n")

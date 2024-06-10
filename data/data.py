@@ -7,6 +7,7 @@ import math
 import sys
 from pandas import ExcelWriter
 from dateutil.relativedelta import relativedelta
+import matplotlib.pyplot as plt
 
 class Queries():
     
@@ -125,6 +126,33 @@ class Queries():
 
             print(" >> Archivo Guardado correctamente")
             print("---"*20)
+
+    # Modulo:
+    def save_graph_seasonal(self, graph, name_graph, name_file, col_gran, period, functions):
+        # Plot the filtered data without outliers
+        if not self.test:
+            print("\n >> Proceso de guardado (Grafica)")
+            # Validacion de la carpeta principal
+            name_folder = "graphics/"
+            functions.validate_path(name_folder)
+
+            # Validacion de subcarpetas - nombre del archivo
+            name_folder = name_folder + name_file + "/"
+            functions.validate_path(name_folder)
+
+            # Validacion de subcarpetas - periodo analisis (Semanal o Mensual)
+            name_folder = name_folder + period + "/"
+            functions.validate_path(name_folder)
+
+            # Validacion de subcarpetas - columna (variable de granuralidad)
+            name_folder = name_folder + col_gran + "/"
+            functions.validate_path(name_folder)
+
+            # Definicion del nombre de la grafica
+            #graph.savefig(self.path + name_folder + name_graph + '.png', dpi = 400, bbox_inches = 'tight')
+            #graph.close()
+            #plt.show()
+            graph.plot().savefig(self.path + name_folder + name_graph + '.png', dpi = 500)
 
     # Modulo: Determinacion del nombre y guardado del dataframe resultante (BD)
     def save_data_bd(self, data):

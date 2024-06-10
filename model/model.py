@@ -340,7 +340,7 @@ class Model_Series_Times():
 
     #@jit(target_backend='cuda', nopython=True)
     # Modulo: Modelo Prophet
-    def get_model_prophet(self, data, col_serie):
+    def get_model_prophet(self, data, col_serie, type_seasonal):
         data = data.dropna().reset_index(drop = True)
         total_data = len(data)
         fill_data = int(round((total_data * 20) / 100))
@@ -360,13 +360,16 @@ class Model_Series_Times():
         name_col_transf = col_serie[1] + "_scaled"
         transformed, lam = boxcox(train[col_serie[1]])
         flag_boxcox = False
-        if lam < -5:
+        print(lam)
+        if lam < 1:
             train[name_col_transf], lam = boxcox(train[col_serie[1]])
             #train[name_col_transf] = self.scaler.fit_transform(train[name_col_transf])
             flag_boxcox = True
 
         else:
             train[name_col_transf] = self.scaler.fit_transform(train[[col_serie[1]]])
+
+        print(flag_boxcox)
 
         #train = train[[col_serie[0], name_col_transf]].set_index([col_serie[0]])
 
@@ -375,7 +378,7 @@ class Model_Series_Times():
         #test[name_col_transf] = self.scaler.fit_transform(test[[col_serie[1]]])
 
         # seasonality_mode = 'multiplicative', daily_seasonality = True, weekly_seasonality = True
-        model_fbp = Prophet()
+        model_fbp = Prophet(seasonality_mode = type_seasonal)
         #model_fbp.add_seasonality('daily', period = 1, fourier_order = 3)
         #model_fbp.add_regressor('regressor', mode = 'additive')
         #model_fbp.fit(train[[col_serie[0], col_serie[1]]].rename(columns = {col_serie[0]: "ds", col_serie[1]: "y"}))
@@ -383,14 +386,21 @@ class Model_Series_Times():
 
         model_fbp.fit(train[[col_serie[0], name_col_transf]].rename(columns = {col_serie[0]: "ds", name_col_transf: "y"}))
         #forecast = model_fbp.predict(test[[col_serie[0], name_col_transf]].rename(columns = {col_serie[0]: "ds"}))
-        forecast = model_fbp.predict(test[[col_serie[0], col_serie[1]]].rename(columns = {col_serie[0]: "ds"}))
-        #future_data = model_fbp.make_future_dataframe(periods = len(test))
-        #forecast = model_fbp.predict(future_data)
-        #print(len(test))
+        #forecast = model_fbp.predict(test[[col_serie[0], col_serie[1]]].rename(columns = {col_serie[0]: "ds"}))
+        diff_days = (test[col_serie[0]].max() - test[col_serie[0]].min()).days
+        future_data = model_fbp.make_future_dataframe(periods = diff_days, freq = 'D')
+        forecast = model_fbp.predict(future_data)
+        #test[col_serie[0]] = pd.to_datetime(test[col_serie[0]])
 
         name_col_real = col_serie[1] + "_real"
         name_col_pred = col_serie[1] + "_pred"
-        test[name_col_pred] = forecast.yhat.values
+        #test[name_col_pred] = forecast.yhat.values
+        forecast.rename(columns = {"ds": col_serie[0], "yhat": name_col_pred}, inplace = True)
+        test = pd.merge(test, forecast[[col_serie[0], name_col_pred]], how = "left", on = [col_serie[0]])
+        print(test.tail())
+        print("---"*30)
+        print(forecast.tail())
+        print("---"*30)
 
         if flag_boxcox:
             test[name_col_pred] = inv_boxcox(test[name_col_pred], lam)
@@ -404,6 +414,7 @@ class Model_Series_Times():
         test["accuracy"] = self.forecast_accuracy(test[name_col_real], test[name_col_pred])
         test.loc[test["accuracy"].isnull(), "accuracy"] = 0
         test["accuracy"] = test["accuracy"].round(2)
+        print(test.isnull().sum())
         mae, rmse, mape, acc = self.get_metrics_pred(test, name_col_real, name_col_pred)
         
         coef_det = r2_score(test[name_col_real], test[name_col_pred], multioutput = 'variance_weighted')
