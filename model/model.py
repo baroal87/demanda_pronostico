@@ -3,53 +3,45 @@
 
 import pandas as pd
 import numpy as np
+from math import log, exp, sqrt
+from dateutil.relativedelta import relativedelta
 
-from prophet import Prophet
-
-from sklearn.metrics import r2_score
-from sklearn.preprocessing import StandardScaler, OneHotEncoder, LabelEncoder, OrdinalEncoder
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
-from sklearn.model_selection import RandomizedSearchCV, GridSearchCV, train_test_split, RepeatedStratifiedKFold
-from feature_engine.selection import (DropFeatures, DropConstantFeatures, DropDuplicateFeatures, DropCorrelatedFeatures, 
-                                      SmartCorrelatedSelection, SelectByShuffling, SelectBySingleFeaturePerformance, 
-                                      RecursiveFeatureElimination)
-
-import matplotlib.pyplot as plt
-import plotly.express as px
-import seaborn as sns
-import plotly.graph_objects as go
-import missingno as ms
-
+#### Modelos ####
 from lightgbm import LGBMRegressor
 from catboost import CatBoostRegressor
 from prophet import Prophet
 from pmdarima import auto_arima
 from statsmodels.tsa.arima.model import ARIMA
 from sklearn.tree import DecisionTreeRegressor
-from sklearn.ensemble import RandomForestRegressor  
-
-from sklearn.metrics import mean_absolute_percentage_error, mean_squared_error, mean_absolute_error
-from scipy.stats import boxcox
-from scipy.special import inv_boxcox
-
-from math import log, exp, sqrt
-
-from dateutil.relativedelta import relativedelta
-
-#from pyInterDemand.algorithm.intermittent import plot_int_demand, classification, mase, rmse
-#from pyInterDemand.algorithm.intermittent import croston_method
-
+from sklearn.ensemble import RandomForestRegressor
 from statsforecast import StatsForecast
 from statsforecast.models import CrostonClassic, ADIDA, IMAPA, CrostonSBA, TSB, AutoARIMA, CrostonOptimized
-from datasetsforecast.losses import rmse
 
 import skforecast
 from skforecast.ForecasterAutoreg import ForecasterAutoreg
 from skforecast.model_selection import grid_search_forecaster
 from skforecast.model_selection import backtesting_forecaster
 
-from statsmodels.tsa.seasonal import seasonal_decompose
+#### Metricas ####
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, LabelEncoder, OrdinalEncoder, MinMaxScaler, PowerTransformer
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import RandomizedSearchCV, GridSearchCV, train_test_split
+from feature_engine.selection import (DropFeatures, DropConstantFeatures, DropDuplicateFeatures, DropCorrelatedFeatures, 
+                                      SmartCorrelatedSelection, SelectByShuffling, SelectBySingleFeaturePerformance, 
+                                      RecursiveFeatureElimination)
+from sklearn.metrics import mean_absolute_percentage_error, mean_squared_error, mean_absolute_error, r2_score
+from scipy.stats import boxcox
+from scipy.special import inv_boxcox
+
+from sklearn.model_selection import ParameterGrid
+from scipy.stats import uniform
+
+from mango import scheduler, Tuner
+
+from gluonts.dataset.common import ListDataset
+from gluonts.torch.model.deepar import DeepAREstimator
+from gluonts.mx.trainer import Trainer
 
 #from numba import jit, cuda
 #import torch
@@ -65,6 +57,8 @@ class Model_Series_Times():
         self.OneHot = OneHotEncoder(handle_unknown = 'ignore')
         self.encoder = OrdinalEncoder()
         self.labelencoder = LabelEncoder()
+        self.minMaxScaler = MinMaxScaler()
+        self.powerTransf = PowerTransformer(method='box-cox', standardize=False)
 
     # Modulo:
     def get_metrics_pred(self, X_test, name_col_real, name_col_pred):
@@ -338,88 +332,139 @@ class Model_Series_Times():
 
         return data_metric
 
-    #@jit(target_backend='cuda', nopython=True)
+    def parameter_prophet(self):
+        params_grid = dict(growth = ['linear', 'logistic', 'flat'],
+                            n_changepoints  = [100, 200, 300, 400],
+                            changepoint_range  = uniform(0.2, 0.8).rvs(5),
+                            #yearly_seasonality = [True, False],
+                            #weekly_seasonality = [True, False],
+                            daily_seasonality = [True, False],
+                            seasonality_mode = ['additive', 'multiplicative'],
+                            seasonality_prior_scale = uniform(5.0, 15.0).rvs(5),
+                            changepoint_prior_scale = uniform(0.0, 0.1).rvs(5),
+                            interval_width = uniform(0.2, 0.8).rvs(5),
+                            uncertainty_samples = [500, 1000, 1500, 2000])
+
+        grid = ParameterGrid(params_grid)
+        cnt = 0
+        for p in grid:
+            cnt += 1
+        print(' >> Total Models: ', cnt)
+        
+        return params_grid
+
+    # Modulo:
+    def get_hyperparameters_prophet(self, params_grid):
+        params_evaluated = []
+        results = []
+        for params in params_grid:
+            try:
+                global train, test
+                model = Prophet(**params)
+                model.fit(train[["fecha", "sales_scaled"]].rename(columns = {"fecha": "ds", "sales_scaled": "y"}))
+                diff_days = (test["fecha"].max() - test["fecha"].min()).days
+                future = model.make_future_dataframe(periods = diff_days, freq = 'D')
+                future_data['cap'] = 6
+                forecast = model.predict(future)
+                future_data = forecast.tail(diff_days)
+
+                #error = mape(test['sales'], future_data['yhat'])
+                error = mean_absolute_percentage_error(test['sales'], future_data['yhat'])
+                params_evaluated.append(params)
+                results.append(error)
+
+            except:
+                params_evaluated.append(params)
+                results.append(25.0)# Giving high loss for exceptions regions of spaces
+
+        return params_evaluated, results
+
     # Modulo: Modelo Prophet
     def get_model_prophet(self, data, col_serie, type_seasonal):
+        # Computo del indicador de filtracion
         data = data.dropna().reset_index(drop = True)
         total_data = len(data)
         fill_data = int(round((total_data * 20) / 100))
-        #print(fill_data)
 
-        #date_max = data[col_serie[0]].max()
-        #date_min = data[col_serie[0]].min()
-        #dif = date_max - date_min
-
-        #days = int((dif.days * 20) / 100)
-        #start_date = date_max + relativedelta(days = -days)
-        #print(start_date)
-
-        #train = data[data["date"] <= start_date]
-        #test = data[data["date"] > start_date]
+        # Particionamiento del conjunto de entrenamiento y prueba
         train = data.loc[:fill_data]
+        train["cap"] = 6
+        test = data.loc[fill_data:]
+        test = test[[col_serie[0], col_serie[1]]]
+
+        # Proceso de transformacion y estandarizacion de los datos
         name_col_transf = col_serie[1] + "_scaled"
         transformed, lam = boxcox(train[col_serie[1]])
         flag_boxcox = False
-        print(lam)
-        if lam < 1:
+        if lam < -5:
             train[name_col_transf], lam = boxcox(train[col_serie[1]])
-            #train[name_col_transf] = self.scaler.fit_transform(train[name_col_transf])
             flag_boxcox = True
 
         else:
-            train[name_col_transf] = self.scaler.fit_transform(train[[col_serie[1]]])
+            #train[name_col_transf] = self.scaler.fit_transform(train[[col_serie[1]]])
+            train[name_col_transf] = self.minMaxScaler.fit_transform(train[[col_serie[1]]])
+            #train[name_col_transf] = self.powerTransf.fit_transform(train[[col_serie[1]]])
+            
+        conf_Dict = dict()
+        conf_Dict['initial_random'] = 10
+        conf_Dict['num_iteration'] = 50
 
-        print(flag_boxcox)
-
-        #train = train[[col_serie[0], name_col_transf]].set_index([col_serie[0]])
-
-        test = data.loc[fill_data:]
-        test = test[[col_serie[0], col_serie[1]]]
-        #test[name_col_transf] = self.scaler.fit_transform(test[[col_serie[1]]])
+        params_grid = self.parameter_prophet()
+        tuner = Tuner(params_grid, self.get_hyperparameters_prophet, conf_Dict)
+        results = tuner.minimize()
+        params = results['best_params']
+        print(' >> Seleccion del mejor parametro: ', params)
+        print(' >> Mejor error: ', results['best_objective'])
 
         # seasonality_mode = 'multiplicative', daily_seasonality = True, weekly_seasonality = True
-        model_fbp = Prophet(seasonality_mode = type_seasonal)
-        #model_fbp.add_seasonality('daily', period = 1, fourier_order = 3)
-        #model_fbp.add_regressor('regressor', mode = 'additive')
-        #model_fbp.fit(train[[col_serie[0], col_serie[1]]].rename(columns = {col_serie[0]: "ds", col_serie[1]: "y"}))
-        #forecast = model_fbp.predict(test[[col_serie[0], col_serie[1]]].rename(columns = {col_serie[0]: "ds"}))
+        #model = Prophet(seasonality_mode = type_seasonal)
+        model = Prophet(**params)
+        if params["growth"] == "logistic":
+            model.fit(train[[col_serie[0], name_col_transf, "cap"]].rename(columns = {col_serie[0]: "ds", name_col_transf: "y"}))
 
-        model_fbp.fit(train[[col_serie[0], name_col_transf]].rename(columns = {col_serie[0]: "ds", name_col_transf: "y"}))
+        else:
+            model.fit(train[[col_serie[0], name_col_transf]].rename(columns = {col_serie[0]: "ds", name_col_transf: "y"}))
         #forecast = model_fbp.predict(test[[col_serie[0], name_col_transf]].rename(columns = {col_serie[0]: "ds"}))
         #forecast = model_fbp.predict(test[[col_serie[0], col_serie[1]]].rename(columns = {col_serie[0]: "ds"}))
         diff_days = (test[col_serie[0]].max() - test[col_serie[0]].min()).days
-        future_data = model_fbp.make_future_dataframe(periods = diff_days, freq = 'D')
-        forecast = model_fbp.predict(future_data)
-        #test[col_serie[0]] = pd.to_datetime(test[col_serie[0]])
+        future_data = model.make_future_dataframe(periods = diff_days, freq = 'D')
+        if params["growth"] == "logistic":
+            future_data['cap'] = 6
+
+        forecast = model.predict(future_data)
 
         name_col_real = col_serie[1] + "_real"
-        name_col_pred = col_serie[1] + "_pred"
+        #name_col_pred = col_serie[1] + "_pred"
+        name_col_pred = col_serie[1]
         #test[name_col_pred] = forecast.yhat.values
         forecast.rename(columns = {"ds": col_serie[0], "yhat": name_col_pred}, inplace = True)
         test = pd.merge(test, forecast[[col_serie[0], name_col_pred]], how = "left", on = [col_serie[0]])
-        print(test.tail())
-        print("---"*30)
-        print(forecast.tail())
-        print("---"*30)
 
+        # Proceso de transformacion inversa
         if flag_boxcox:
             test[name_col_pred] = inv_boxcox(test[name_col_pred], lam)
 
         else:
-            test[name_col_pred] = self.scaler.inverse_transform(test[[name_col_pred]])
+            #test[name_col_pred] = self.scaler.inverse_transform(test[[name_col_pred]])
+            test[name_col_pred] = self.minMaxScaler.inverse_transform(test[[name_col_pred]])
+            #test[name_col_pred] = self.powerTransf.inverse_transform(test[name_col_pred])
 
         test[name_col_pred] = test[name_col_pred].round(2)
         test.rename(columns = {col_serie[1]: name_col_real}, inplace = True)
         
+        # Proceso de evaluacionn y computo de metricas
         test["accuracy"] = self.forecast_accuracy(test[name_col_real], test[name_col_pred])
         test.loc[test["accuracy"].isnull(), "accuracy"] = 0
         test["accuracy"] = test["accuracy"].round(2)
-        print(test.isnull().sum())
+        #print(test.isnull().sum())
         mae, rmse, mape, acc = self.get_metrics_pred(test, name_col_real, name_col_pred)
         
         coef_det = r2_score(test[name_col_real], test[name_col_pred], multioutput = 'variance_weighted')
         if coef_det < 0:
             coef_det = abs(coef_det)
+            
+        elif coef_det > 1:
+            coef_det = 0
 
         data_metric = pd.DataFrame()
         data_metric["mae"] = [mae]
@@ -431,13 +476,6 @@ class Model_Series_Times():
 
         return data_metric
 
-    # Modulo: invert box-cox transform
-    def boxcox_inverse(self, value, lam):
-        if lam == 0:
-            return exp(value)
-
-        return exp(log(lam * value + 1) / lam)
-    
     # Modulo: Evaluacion del modelo ARIMA para un orden dado (p,d,q) y devolver RMSE
     def evaluate_arima_model(self, X, arima_order):
         X = X.astype('float32')
@@ -763,6 +801,41 @@ class Model_Series_Times():
         data_metric = data_metric.reset_index(drop = True)
 
         return data_metric, col_pred
+
+    # Modulo:
+    def get_model_deepAR(self, data, col_serie):
+        data = data.dropna().reset_index(drop = True)
+        total_data = len(data)
+        fill_data = int(round((total_data * 20) / 100))
+        #start = pd.Timestamp(min_date, freq="H")
+
+        train = data.loc[:fill_data]
+        train = train[[col_serie[0], col_serie[1]]].rename(columns = {col_serie[0]: "date", col_serie[1]: "y"})
+        min_date = train[col_serie[0]].min()
+        train_ds = ListDataset([{'target': train.y, 'start': min_date}], freq = 'M')
+
+        test = data.loc[fill_data:]
+        test = test[[col_serie[0], col_serie[1]]].rename(columns = {col_serie[0]: "date", col_serie[1]: "y"})
+        min_date = test[col_serie[0]].min()
+        test_ds = ListDataset([{'target': test.y, 'start': min_date}], freq = 'M')
+
+        estimator = DeepAREstimator(prediction_length = 28,
+                                    context_length = 100,
+                                    freq= "M",
+                                    trainer = Trainer(#ctx = "cpu", # remove if running on windows
+                                                    epochs = 5,
+                                                    learning_rate = 1e-3,
+                                                    num_batches_per_epoch = 100)
+                                    )
+
+        predictor = estimator.train(train_ds)
+        predictions = predictor.predict(test_ds)
+        predictions = list(predictions)[0]
+        print(predictions)
+        print("---"*30)
+        predictions = predictions.quantile(0.5)
+        print(predictions)
+
 
     # Modulo:
     def get_model_forecasters(self, data, var_obs):
