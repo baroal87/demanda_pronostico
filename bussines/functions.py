@@ -401,7 +401,8 @@ class Functions():
 
         # Validacion para identificar la demanda sea menor al periodo total
         adi_data["flag"] = np.where(adi_data.demand <= adi_data.period, 0, 1)
-        adi_data.loc[adi_data.flag == 1, "adi"] = 0
+        #adi_data.loc[adi_data.flag == 1, "adi"] = 0
+        adi_data.loc[adi_data.flag == 1, "demand"] = adi_data.period
         adi_data.drop("flag", axis = 1, inplace = True)
         #print(adi_data.head())
 
@@ -666,23 +667,31 @@ class Functions():
 
         # Computo del total de dias
         if period == "daily":
-            date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'D')
-            date.period = date.period.apply(lambda x: int(round(x, 0)))
+            #date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'D')
+            #date.period = date.period.apply(lambda x: int(round(x, 0)))
+            
+            date['period'] = (date['end'].dt.to_period('D').sub(date['start'].dt.to_period('D')).apply(lambda x: x.n))
+            date.period = date.period.apply(lambda x: math.ceil(x))
+            date.period = date.period + 1
 
         # Computo del total de meses
         elif period == "month":
-            date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'M')
-            date.period = date.period.apply(lambda x: math.ceil(x))
-            date.period = date.period + 1
-            
-            #date['period'] = (date['end'].dt.to_period('M').sub(date['start'].dt.to_period('M')).apply(lambda x: x.n))
+            #date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'M')
             #date.period = date.period.apply(lambda x: math.ceil(x))
             #date.period = date.period + 1
+            
+            date['period'] = (date['end'].dt.to_period('M').sub(date['start'].dt.to_period('M')).apply(lambda x: x.n))
+            date.period = date.period.apply(lambda x: math.ceil(x))
+            date.period = date.period + 1
 
         # # Computo del total de semanas
         else:
-            date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'W')
-            date.period = date.period.apply(lambda x: int(round(x, 0)))
+            #date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'W')
+            #date.period = date.period.apply(lambda x: int(round(x, 0)))
+            
+            date['period'] = (date['end'].dt.to_period('W').sub(date['start'].dt.to_period('W')).apply(lambda x: x.n))
+            date.period = date.period.apply(lambda x: math.ceil(x))
+            #date.period = date.period + 1
 
         # Generacion de identificador
         date["label"] = date[columns[:-1]].apply("_".join, axis = 1)
@@ -1124,7 +1133,7 @@ class Functions():
 
     # Modulo:
     def get_graph_series_data(self, data, col_serie, period):
-        dict_period = {"week": 52, "month": 12}
+        dict_period = {"daily": 7, "week": 52, "month": 12}
         data = data.set_index(col_serie[0])
         data.sort_index(inplace = True)
 
