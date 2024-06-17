@@ -122,7 +122,7 @@ class Main_Demand_Series_Times():
 
         # Seleccion de las variables (precio y venta o ingresos netos)
         col_obs_abc = self.functions.select_var_abc(data)
-        print(" >> Variables analisis de tiempo: {}\n".format(str(col_obs_abc).replace("[", "").replace("]", "")))
+        print(" >> Variables analisis de abc: {}\n".format(str(col_obs_abc).replace("[", "").replace("]", "")))
         while True:
             validate = input('Las variables seleccionadas son correctas (y / n): ')
             if validate.lower() == "y":
@@ -179,13 +179,13 @@ class Main_Demand_Series_Times():
             print("\n >> Year: ", year)
 
             # Analisis por la granularidad seleccionada
-            fil_data = col_serie.copy() #["date", "sales"]
+            fill_data = col_serie.copy() #["date", "sales"]
             for col in col_gran:
                 # Filtracion de datos
-                fil_data.insert(0, col)
+                fill_data.insert(0, col)
                 df = data[(data.year >= year)]
-                print("\n > Filtrado por: ", fil_data)
-                df = df[fil_data]
+                print("\n > Filtrado por: ", fill_data)
+                df = df[fill_data]
 
                 # Agrupamiento de valores en base a la variables de observacion seleccionada
                 print("\n >>> DataFrame: Agrupado por la variable - ({}) <<<".format(col_serie[1]))
@@ -270,7 +270,7 @@ class Main_Demand_Series_Times():
 
         return data_frame_metric
 
-    # Modulo:
+    # Modulo: Analisis y generacion de la clasificacion ABC (Inventario) y xyz (ingresos)
     def data_classify_abc(self, data, col_obs_abc, col_gran, col_serie, period):
         granularity = []
         data_frame_abc = {}
@@ -296,9 +296,15 @@ class Main_Demand_Series_Times():
             
         return data_frame_abc
 
-    # Modulo:
-    def model_training(self, data, data_demand, col_gran, col_serie, col_obs_abc, period):
-        data = self.functions.set_catgory_data(data, data_demand, col_gran)
+    # Modulo: Entrenamiento, prediccion, validacion y seleccion del mejor modelo ajustado a la serie
+    def model_training(self, data, data_demand, data_comp_seasonal, col_gran, col_serie, col_obs_abc, period):
+        select_models = [1, 2, 3, 4, 5 , 6, 7]
+        #select_models = [5]
+        data = self.functions.set_catgory_data(data.copy(), data_demand.copy(), col_gran)
+        data_comp_seasonal = pd.merge(data_comp_seasonal, data_demand[["label", "category_behavior", "flag_new"]], how = "left", on = 'label')
+        data_comp_seasonal = data_comp_seasonal[(data_comp_seasonal.flag_new != 1) | (data_comp_seasonal.category_behavior != "N/A")]
+        data_comp_seasonal.drop(["p-value_add", "acf_add", "p-value_mult", "acf_mult", "flag_new", "category_behavior"], axis = 1, inplace = True)
+
         # Identificador de columnas (cat_beh_gran & fsct_gran)
         size = len(col_gran)
         columns = data.columns.tolist()
@@ -337,25 +343,27 @@ class Main_Demand_Series_Times():
 
             print("\n >>> Modelos: Prophet, AutoArima, ARIMA & Croston <<< \n")
             for name, group in df_model_1.groupby(segment):
-                start_time_model = time()
-                data_metric, col_pred = self.model.get_models_statsForecast(group.copy(), col_serie)
-                data_metric["label"] = list(name)[0]
-                end_time_model = time()
-                data_metric["seconds"] = round(end_time_model - start_time_model, 2)
-                data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
+                if (1 in select_models) | (2 in select_models) | (3 in select_models):
+                    start_time_model = time()
+                    data_metric, col_pred = self.model.get_models_statsForecast(group.copy(), col_serie)
+                    data_metric["label"] = list(name)[0]
+                    end_time_model = time()
+                    data_metric["seconds"] = round(end_time_model - start_time_model, 2)
+                    data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
 
-                for col in col_pred:
-                    metric_name = str(list(name)[0]) + "-" + col
-                    data_frame_metric[metric_name] = data_metric[data_metric.model == col].drop("model", axis = 1)
+                    for col in col_pred:
+                        metric_name = str(list(name)[0]) + "-" + col
+                        data_frame_metric[metric_name] = data_metric[data_metric.model == col].drop("model", axis = 1)
 
-                start_time_model = time()
-                data_metric = self.model.get_model_Arima(group.copy(), col_serie)
-                data_metric["label"] = list(name)[0]
-                end_time_model = time()
-                data_metric["seconds"] = round(end_time_model - start_time_model, 2)
-                data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
-                metric_name = str(list(name)[0]) + "-Arima"
-                data_frame_metric[metric_name] = data_metric
+                if 4 in select_models:
+                    start_time_model = time()
+                    data_metric = self.model.get_model_Arima(group.copy(), col_serie)
+                    data_metric["label"] = list(name)[0]
+                    end_time_model = time()
+                    data_metric["seconds"] = round(end_time_model - start_time_model, 2)
+                    data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
+                    metric_name = str(list(name)[0]) + "-Arima"
+                    data_frame_metric[metric_name] = data_metric
 
                 #start_time_model = time()
                 #data_metric = self.model.get_model_autoarima(group.copy(), col_serie = col_serie)
@@ -366,15 +374,16 @@ class Main_Demand_Series_Times():
                 #metric_name = str(list(name)[0]) + "-AutoArima_normal"
                 #data_frame_metric[metric_name] = data_metric
 
-                start_time_model = time()
-                #col_serie_ = [period, "year", col_serie[1]]
-                data_metric = self.model.get_model_prophet(group.copy(), col_serie = col_serie)
-                data_metric["label"] = list(name)[0]
-                end_time_model = time()
-                data_metric["seconds"] = round(end_time_model - start_time_model, 2)
-                data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
-                metric_name = str(list(name)[0]) + "-Prophet"
-                data_frame_metric[metric_name] = data_metric
+                if 5 in select_models:
+                    start_time_model = time()
+                    #col_serie_ = [period, "year", col_serie[1]]
+                    data_metric = self.model.get_model_prophet(group.copy(), col_serie = col_serie, type_seasonal = data_comp_seasonal[data_comp_seasonal.label == list(name)[0]].type_seasonal.values[0])
+                    data_metric["label"] = list(name)[0]
+                    end_time_model = time()
+                    data_metric["seconds"] = round(end_time_model - start_time_model, 2)
+                    data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
+                    metric_name = str(list(name)[0]) + "-Prophet"
+                    data_frame_metric[metric_name] = data_metric
 
                 #self.model.get_model_forecasters(group, self.col_serie)
                 #break
@@ -392,24 +401,25 @@ class Main_Demand_Series_Times():
 
             print("\n >>> Modelos: LGBM - CatBoost <<< \n")
             for name, group in df_model_2.groupby(segment):
-                start_time_model = time()
-                data_metric = self.model.get_model_LGBM(group.copy(), columns_num, columns_cat, col_pred = col_serie[1])
-                data_metric["label"] = list(name)[0]
-                end_time_model = time()
-                data_metric["seconds"] = round(end_time_model - start_time_model, 2)
-                data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
-                metric_name = str(list(name)[0]) + "-LGBM"
-                data_frame_metric[metric_name] = data_metric
+                if 6 in select_models:
+                    start_time_model = time()
+                    data_metric = self.model.get_model_LGBM(group.copy(), columns_num, columns_cat, col_pred = col_serie[1])
+                    data_metric["label"] = list(name)[0]
+                    end_time_model = time()
+                    data_metric["seconds"] = round(end_time_model - start_time_model, 2)
+                    data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
+                    metric_name = str(list(name)[0]) + "-LGBM"
+                    data_frame_metric[metric_name] = data_metric
                 
-                start_time_model = time()
-                data_metric = self.model.get_model_CatBoost(group.copy(), columns_num, columns_cat, col_pred = col_serie[1])
-                data_metric["label"] = list(name)[0]
-                end_time_model = time()
-                data_metric["seconds"] = round(end_time_model - start_time_model, 2)
-                data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
-                #metric_name = self.col_gran[idx] + "-CatBoost"
-                metric_name = str(list(name)[0]) + "-CatBoost"
-                data_frame_metric[metric_name] = data_metric
+                if 7 in select_models:
+                    start_time_model = time()
+                    data_metric = self.model.get_model_CatBoost(group.copy(), columns_num, columns_cat, col_pred = col_serie[1])
+                    data_metric["label"] = list(name)[0]
+                    end_time_model = time()
+                    data_metric["seconds"] = round(end_time_model - start_time_model, 2)
+                    data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
+                    metric_name = str(list(name)[0]) + "-CatBoost"
+                    data_frame_metric[metric_name] = data_metric
                 #break
             #break
         
@@ -422,6 +432,183 @@ class Main_Demand_Series_Times():
         data_metric = data_metric.reset_index(drop = True)
 
         return data_metric
+
+    # Modulo:
+    def plot_graph_series(self, data, col_gran, col_serie, name_file, period):
+        data_comp_seasonal = []
+        fill_data = [col_serie[0]]
+        for gran in col_gran:
+            data[gran] = data[gran].astype(str)
+            fill_data.insert(0, gran)
+            temp = self.queries.grouped_data(data, fill_data, col_serie[1])
+            temp["label"] = temp[fill_data[:-1]].apply("_".join, axis = 1)
+            for label in temp.label.unique().tolist():
+                metrics, seasonal_data = self.functions.get_graph_series_data(temp[temp.label == label][col_serie], col_serie, period)
+                data_comp_seasonal.append({"label": label, "p-value_add": metrics[0], "acf_add": metrics[1], "p-value_mult": metrics[2], "acf_mult": metrics[3], "type_seasonal": metrics[4]})
+
+                gran = "_".join(fill_data[:-1])
+                name_graph = label + "_" + "additive" if metrics[4] == "additive" else label + "_" + "multiplicative"
+                self.queries.save_graph_seasonal(seasonal_data, name_graph, name_file, gran, period, self.functions)
+                #break
+            #break
+
+        data_comp_seasonal = pd.DataFrame.from_dict(data_comp_seasonal)
+        return data_comp_seasonal
+
+    # Modulo:
+    def data_hml(self, data, data_demand, col_gran, col_hml, dict_hml = {"h": 20, "m":30, "l":50}):
+        print("####"*30)
+        #col_hml = ['price', "sales", "N/A"]
+        data["revenue"] = round(data[col_hml[0]] * data[col_hml[1]], 2)
+        #utilidad = total_ingresos - (costo * venta)
+        if col_hml[-1] == "N/A":
+            data["cost"] = round(data[col_hml[0]] - (data[col_hml[0]] * 0.10), 2)
+            data["utility"] = data.revenue - (data.cost * data[col_hml[1]])
+            data["utility"] = data["utility"].round(2)
+            fill_data = col_hml[:-1] + ["cost", "revenue", "utility"]
+            
+        else:
+            data["utility"] = data.revenue - (data[col_hml[1]] * data[col_hml[-1]])
+            data["utility"] = data["utility"].round(2)
+            fill_data = col_hml + ["revenue", "utility"]
+
+        data_hml = pd.DataFrame()
+        df = pd.DataFrame()
+        data_hml_detail = pd.DataFrame()
+        df_detail = pd.DataFrame()
+        for idx, col in enumerate(col_gran):
+            data[col] = data[col].astype(str)
+            fill_data.insert(0, col)
+
+            temp = data[fill_data]
+            temp = temp[(temp[col_hml[0]] >= 0.5) & (temp[col_hml[1]] >= 0.5)]
+            temp["label"] = temp[fill_data[: idx + 1]].apply("_".join, axis = 1)
+
+            temp = pd.merge(temp, data_demand[["granularity", "label", "category_behavior", "category_abc", "flag_new"]], how = "left", on = 'label')
+            temp = temp[(temp.flag_new != 1) | (temp.category_behavior != "N/A")]
+            temp.drop(["flag_new"], axis = 1, inplace = True)
+            #print(temp.head())
+            #print("---"*30, "\n")
+
+            """
+            # Proceso: Generacion HML por label
+            grouped = temp.groupby(['granularity', 'category_behavior', 'label', 'category_abc']).agg(count_abc = ('label', 'count'), 
+                                                                                             count_label = ('label', 'nunique'), 
+                                                                                             sum_sales = (col_hml[1], 'sum'),
+                                                                                             total_revenue = ('revenue', 'sum'),
+                                                                                             total_utility = ('utility', 'sum')).reset_index()
+            total = grouped.total_revenue.sum()
+            grouped["percentage"] =  round((grouped.total_revenue / total) * 100, 2)
+            grouped = grouped.sort_values(['category_behavior', 'category_abc'], ascending = True)
+
+            temp1 = grouped.groupby(['granularity', 'label', 'category_behavior', 'category_abc'])
+            for name, group in temp1:
+                colums = ['granularity', 'label', "category_behavior", "category_abc"]
+                total_utility = group.total_utility.sum()
+                print(total_utility)
+                for key, perc in dict_hml.items():
+                    name_col = key + " - " + str(perc) + "%"
+                    group[name_col] = round((perc * total_utility) / 100, 2)
+                    colums.append(name_col)
+
+                df = pd.concat([df, group[colums]], axis = 0, ignore_index = False)
+
+            data_hml = pd.concat([data_hml, grouped[["granularity", 'label', "category_behavior", "category_abc", "percentage"]]], axis = 0, ignore_index = False)
+            ##############################################################################################################################################################
+            #"""
+            
+            # Proceso: Generacion de HML a nivel detalle
+            if len(temp.label.unique()) == 1:
+                total = round(temp.utility.sum(), 2)
+                temp = temp.sort_values(['utility'], ascending = False)
+                temp["percentage"] =  round((temp.utility / total) * 100, 2)
+                temp["cumsum_perc"] = temp.percentage.cumsum()
+                temp.loc[temp.cumsum_perc > 100, "cumsum_perc"] = 100
+                #temp["flag"] = 0
+
+                limit_inf = 0
+                limit_sup = list(dict_hml.values())[0]
+                cont = 0
+                values = []
+                colums = []
+                for key, perc in dict_hml.items():
+                    cont += 1
+                    colums.append(key + " - " + str(perc) + "%")
+                    values.append(len(temp[(temp.cumsum_perc > limit_inf) & (temp.cumsum_perc <= limit_sup)]))
+                    limit_inf = limit_sup
+
+                    if cont < len(list(dict_hml.values())):
+                        limit_sup += list(dict_hml.values())[cont]
+
+                temp = temp[["granularity", "category_behavior", "category_abc"]].drop_duplicates()
+                temp[colums] = values
+                #print(temp.tail())
+                #print("+++"*30)
+
+                df_detail = pd.concat([df_detail, temp], axis = 0, ignore_index = False)
+
+            else:
+                grouped = temp.groupby(['granularity', 'label', 'category_behavior', 'category_abc']).agg(count_abc = ('label', 'count'), 
+                                                                                                count_label = ('label', 'nunique'), 
+                                                                                                sum_sales = (col_hml[1], 'sum'),
+                                                                                                #total_revenue = ('revenue', 'sum'),
+                                                                                                total_utility = ('utility', 'sum')).reset_index()
+                total = grouped.total_utility.sum()
+                #grouped["percentage"] =  round((grouped.total_revenue / total) * 100, 2)
+                #grouped = grouped.sort_values(['category_behavior', 'category_abc'], ascending = True)
+                grouped = grouped.sort_values(['total_utility'], ascending = False)
+                grouped["percentage"] =  round((grouped.total_utility / total) * 100, 2)
+                grouped["cumsum_perc"] = grouped.percentage.cumsum()
+                grouped.loc[grouped.cumsum_perc > 100, "cumsum_perc"] = 100
+                #print(grouped.head())
+                #print()
+
+                temp2 = grouped.groupby(['granularity', 'category_behavior', 'category_abc'])
+                for name, group in temp2:
+                    #print("---"*30)
+                    colums = ['granularity', "category_behavior", "category_abc"]
+                    #total_utility = group.total_utility.sum()
+                    group = group.sort_values(['total_utility'], ascending = False)
+                    #group["percentage"] =  round((group.total_utility / total_utility) * 100, 2)
+                    #print(name)
+                    #print(group.head())
+                    #print("+++"*30)
+                    
+                    limit_inf = 0
+                    limit_sup = list(dict_hml.values())[0]
+                    cont = 0
+                    values = []
+                    colums = []
+                    for key, perc in dict_hml.items():
+                        cont += 1
+                        colums.append(key + " - " + str(perc) + "%")
+                        values.append(len(group[(group.cumsum_perc > limit_inf) & (group.cumsum_perc <= limit_sup)]))
+                        limit_inf = limit_sup
+
+                        if cont < len(list(dict_hml.values())):
+                            limit_sup += list(dict_hml.values())[cont]
+                            
+                    group = group[["granularity", "category_behavior", "category_abc"]].drop_duplicates()
+                    group[colums] = values
+                    #print(group.tail())
+                    #print("+++"*30)
+
+                    df_detail = pd.concat([df_detail, group], axis = 0, ignore_index = False)
+
+            #data_hml_detail = pd.concat([data_hml_detail, grouped[["granularity", "category_behavior", "category_abc", "percentage"]]], axis = 0, ignore_index = False)
+
+        #print("\n >>> DataFrame: HML <<< \n")
+        #data_hml = pd.merge(data_hml, df, how = "left", on = ['granularity', 'label', "category_behavior", "category_abc"])
+        #print(data_hml.head(10))
+        #print("---"*30)
+
+        #print("\n >>> DataFrame: Detail HML <<< \n")
+        #data_hml_detail = pd.merge(data_hml_detail, df_detail, how = "left", on = ['granularity', "category_behavior", "category_abc"])
+        #print(data_hml_detail.head(10))
+        print(df_detail.head(10))
+        print("####"*30)
+        
+        return data_hml, data_hml_detail
 
     def main(self):
         # Bandera de prueba
@@ -463,6 +650,7 @@ class Main_Demand_Series_Times():
             col_serie = ['fecha', 'sales']
             col_gran = ['dept_nbr', 'store_nbr'] #'dept_nbr', 'store_nbr'
             col_obs_abc = ['price', "sales"]
+            col_obs_hml = ['price', "sales", "N/A"]
             #name_file = "data_Atom_agu_3.csv"
             name_file = "data_Atom_agu.csv"
             
@@ -480,7 +668,7 @@ class Main_Demand_Series_Times():
             print("###"*30)
 
             # Proceso: Clasificacion de inventario ABC
-            data_frame_abc = self.data_classify_abc(data, col_obs_abc, col_gran, col_serie, period)
+            data_frame_abc = self.data_classify_abc(data.copy(), col_obs_abc, col_gran, col_serie, period)
             print("###"*30)
 
             # Proceso: Generacion de la estractura final del dataframe clasificacion en base a demanda
@@ -511,12 +699,14 @@ class Main_Demand_Series_Times():
             print("\n > Volumen: ", detail_data_abc.shape)
             print("---"*20)
 
-            print("\n >>> Dataframe: Final - Fase 1 <<< \n")
             data_final = pd.merge(data_demand, data_final_abc[["label", "category_abc", "category_xyz", "total_revenue"]], how = "left", on = ["label"])
             #data_final = pd.merge(data_demand, data_final_abc[["label", "category_abc", "total_revenue"]], how = "left", on = ["label"])
             data_fsct = self.functions.get_forecastability(data_final.copy())
             data_final = pd.merge(data_final, data_fsct[["label", "forecastability"]], how = "left", on = ["label"])
+            data_hml, data_hml_detail = self.data_hml(data.copy(), data_final.copy(), col_gran, col_obs_hml)
+            sys.exit()
 
+            print("\n >>> Dataframe: Final - Fase 1 <<< \n")
             columns = ["granularity", "label", 'active', 'cv2']
             columns_data_final = data_final.columns.tolist()
             columns_data_final.sort()
@@ -525,19 +715,22 @@ class Main_Demand_Series_Times():
             data_final = data_final.reindex(columns, axis = 1)
             print(data_final.head())
             print("\n > Volumen: ", data_final.shape)
-            print("###"*30)
-            #print(data_final[data_final.forecastability == "difficult"])
-            sys.exit()
+            print("---"*20)
+
+            #print("\n >>> Dataframe: Estacionalidades <<< \n")
+            #data_comp_seasonal = self.plot_graph_series(data.copy(), col_gran.copy(), col_serie, name_file, period)
+            #print(data_comp_seasonal.head())
+            #print("###"*30)
             
             ###########################################
             print("\n >> Proceso: Entrenamiento, validaciones y seleccion del mejor modelo <<<\n")
 
             # Proceso: Entrenamientos, validacion y generacion de metricas
-            data_metric = self.model_training(data, data_final, col_gran, col_serie, col_obs_abc, period)
-            #data_metric = self.queries.get_data_file("result/data_Atom_agu/month/data_Atom_agu_metrics.csv")
+            #data_metric = self.model_training(data, data_final, data_comp_seasonal, col_gran, col_serie, col_obs_abc, period)
+            data_metric = self.queries.get_data_file("result/data_Atom_agu/month/data_Atom_agu_metrics.csv")
 
             print("\n >>> DataFrame: Metricas de Modelos <<<\n")
-            print(data_metric.head())
+            print(data_metric.head(20))
             print("---"*20)
 
             # Proceso: Seleccion de los modelos predominantes

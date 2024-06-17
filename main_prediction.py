@@ -101,86 +101,14 @@ class Main_Model_Prediction():
                 print(df_model_1.head())
                 print(df_model_1.shape)
                 print("---"*30)
-
-                print("\n >>> Modelos: Prophet, AutoArima, ARIMA & Croston <<< \n")
                 for name, group in df_model_1.groupby(segment):
-                    #print(group.head(2))
-                    start_time_model = time()
-                    data_metric, col_pred = self.model.get_models_statsForecast(group.copy(), self.col_serie)
-                    data_metric["label"] = list(name)[0]
-                    end_time_model = time()
-                    data_metric["time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
+                    print(name)
+                    print(group.head())
+                    self.model.get_model_deepAR(group, col_serie)
+                    break
+                break
 
-                    for col in col_pred:
-                        #metric_name = str(list(name)[0]) + "-AutoArima_stats"
-                        metric_name = str(list(name)[0]) + "-" + col
-                        data_frame_metric[metric_name] = data_metric[data_metric.model == col].drop("model", axis = 1)
-
-                    start_time_model = time()
-                    data_metric = self.model.get_model_Arima(group.copy(), self.col_serie)
-                    data_metric["label"] = list(name)[0]
-                    end_time_model = time()
-                    data_metric["time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
-                    metric_name = str(list(name)[0]) + "-Arima"
-                    data_frame_metric[metric_name] = data_metric
-
-                    #start_time_model = time()
-                    #data_metric = self.model.get_model_autoarima(group.copy(), col_serie = self.col_serie)
-                    #data_metric["label"] = list(name)[0]
-                    #end_time_model = time()
-                    #data_metric["time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
-                    #metric_name = str(list(name)[0]) + "-AutoArima_normal"
-                    #data_frame_metric[metric_name] = data_metric
-
-                    start_time_model = time()
-                    col_serie = [period, "year", self.col_serie[1]]
-                    data_metric = self.model.get_model_prophet(group.copy(), col_serie = self.col_serie)
-                    data_metric["label"] = list(name)[0]
-                    end_time_model = time()
-                    data_metric["time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
-                    metric_name = str(list(name)[0]) + "-Prophet"
-                    data_frame_metric[metric_name] = data_metric
-
-                    #self.model.get_model_forecasters(group, self.col_serie)
-                    #break
- 
-                #""
-                print("\n >>> DataFrame: Grouped - Parte 2 <<< \n")
-                col = segment.copy()
-                col.extend([self.period, "year"])
-                df_model_2 = self.queries.get_grouped_data_model(data.copy(), col_gran = col, var_obs = self.col_obs_abc, type_model = 2)
-                print(" > Variables analizar: {}\n".format(df_model_2.columns.tolist()))
-                print(df_model_2.head())
-                print(df_model_2.shape)
-                print("---"*30)
-                #df[[self.period, "year"]] = df[[self.period, "year"]].astype(str)
-                #columns_num, columns_cat = self.model.get_segmetation_variables(df, df.columns.tolist())
-                columns_num = [self.col_obs_abc[0]]
-                columns_cat = [segment[0], self.period, "year"]
-
-                print("\n >>> Modelos: LGBM - CatBoost <<< \n")
-                for name, group in df_model_2.groupby(segment):
-                    start_time_model = time()
-                    data_metric = self.model.get_model_LGBM(group.copy(), columns_num, columns_cat, col_pred = self.col_serie[1])
-                    data_metric["label"] = list(name)[0]
-                    end_time_model = time()
-                    data_metric["time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
-                    #metric_name = self.col_gran[idx] + "-LGBM"
-                    metric_name = str(list(name)[0]) + "-LGBM"
-                    data_frame_metric[metric_name] = data_metric
-                    
-                    start_time_model = time()
-                    data_metric = self.model.get_model_CatBoost(group.copy(), columns_num, columns_cat, col_pred = self.col_serie[1])
-                    data_metric["label"] = list(name)[0]
-                    end_time_model = time()
-                    data_metric["time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
-                    #metric_name = self.col_gran[idx] + "-CatBoost"
-                    metric_name = str(list(name)[0]) + "-CatBoost"
-                    data_frame_metric[metric_name] = data_metric
-                    #break
-                #""
-                #break
-
+            sys.exit()
             data_metric = pd.DataFrame()
             for index, df in data_frame_metric.items():
                 index = str(index).split("-")

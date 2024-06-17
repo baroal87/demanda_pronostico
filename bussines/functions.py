@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 
 from statsmodels.tsa.seasonal import seasonal_decompose
 import statsmodels.api as sm
+from statsmodels.tsa.stattools import adfuller
 
 class Functions():
     
@@ -400,7 +401,8 @@ class Functions():
 
         # Validacion para identificar la demanda sea menor al periodo total
         adi_data["flag"] = np.where(adi_data.demand <= adi_data.period, 0, 1)
-        adi_data.loc[adi_data.flag == 1, "adi"] = 0
+        #adi_data.loc[adi_data.flag == 1, "adi"] = 0
+        adi_data.loc[adi_data.flag == 1, "demand"] = adi_data.period
         adi_data.drop("flag", axis = 1, inplace = True)
         #print(adi_data.head())
 
@@ -665,23 +667,31 @@ class Functions():
 
         # Computo del total de dias
         if period == "daily":
-            date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'D')
-            date.period = date.period.apply(lambda x: int(round(x, 0)))
+            #date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'D')
+            #date.period = date.period.apply(lambda x: int(round(x, 0)))
+            
+            date['period'] = (date['end'].dt.to_period('D').sub(date['start'].dt.to_period('D')).apply(lambda x: x.n))
+            date.period = date.period.apply(lambda x: math.ceil(x))
+            date.period = date.period + 1
 
         # Computo del total de meses
         elif period == "month":
-            date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'M')
-            date.period = date.period.apply(lambda x: math.ceil(x))
-            date.period = date.period + 1
-            
-            #date['period'] = (date['end'].dt.to_period('M').sub(date['start'].dt.to_period('M')).apply(lambda x: x.n))
+            #date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'M')
             #date.period = date.period.apply(lambda x: math.ceil(x))
             #date.period = date.period + 1
+            
+            date['period'] = (date['end'].dt.to_period('M').sub(date['start'].dt.to_period('M')).apply(lambda x: x.n))
+            date.period = date.period.apply(lambda x: math.ceil(x))
+            date.period = date.period + 1
 
         # # Computo del total de semanas
         else:
-            date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'W')
-            date.period = date.period.apply(lambda x: int(round(x, 0)))
+            #date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'W')
+            #date.period = date.period.apply(lambda x: int(round(x, 0)))
+            
+            date['period'] = (date['end'].dt.to_period('W').sub(date['start'].dt.to_period('W')).apply(lambda x: x.n))
+            date.period = date.period.apply(lambda x: math.ceil(x))
+            #date.period = date.period + 1
 
         # Generacion de identificador
         date["label"] = date[columns[:-1]].apply("_".join, axis = 1)
@@ -1107,18 +1117,56 @@ class Functions():
         best_models = pd.DataFrame.from_dict(best_models)
         return best_models
 
-    # Modulo:
-    def get_graph_series_data(self, data, col_gran, col_serie):
-        data_comp_seasonal = {}
-        for gran in col_gran:
-            components = seasonal_decompose(data['Retail_Sales'], model = 'multiplicative')
+    def stationarity_check(self, TS):
+        # Perform the Dickey Fuller Test
+        dftest = adfuller(TS) # change the passengers column as required 
 
-        acf_a = sum(pd.Series(sm.tsa.acf(data['residual_a'])).fillna(0))
-        acf_m= sum(pd.Series(sm.tsa.acf(data['residual_m'])).fillna(0))
-        if acf_a>acf_m:
-            print("Additive")
+        # Print Dickey-Fuller test results
+        #print ('Results of Dickey-Fuller Test:')
+
+        dfoutput = pd.Series(dftest[0:4], index = ['Test Statistic','p-value','#Lags Used','Number of Observations Used'])
+        for key,value in dftest[4].items():
+            dfoutput['Critical Value (%s)'%key] = value
+        #print (dfoutput)
+
+        return dfoutput
+
+    # Modulo:
+    def get_graph_series_data(self, data, col_serie, period):
+        dict_period = {"daily": 7, "week": 52, "month": 12}
+        data = data.set_index(col_serie[0])
+        data.sort_index(inplace = True)
+
+        # Calculo de estacionalidad mult y addiptive
+        mult_decomp = seasonal_decompose(data[col_serie[1]], model = 'multiplicative', period = dict_period[period])
+        add_decomp = seasonal_decompose(data[col_serie[1]], model = 'additive', period = dict_period[period])
+        residual_m = mult_decomp.resid
+        residual_a = add_decomp.resid
+        residual_m.dropna(inplace = True)
+        residual_a.dropna(inplace = True)
+
+        # Evaluacion de los tipos de estacionalidad por fuller y acf
+        add = self.stationarity_check(residual_a)
+        mult = self.stationarity_check(residual_m)
+        acf_m = round(sum(pd.Series(sm.tsa.acf(mult_decomp.resid)).fillna(0)), 2)
+        acf_a = round(sum(pd.Series(sm.tsa.acf(add_decomp.resid)).fillna(0)), 2)
+
+        # Evaluacion de metricas para determinar si la serie es mult o add
+        if add["p-value"].round(4) == mult["p-value"].round(4):
+            #print("opcion 1")
+            if acf_a > acf_m:
+                return [add["p-value"].round(4), acf_a, mult["p-value"].round(4), acf_m, "additive"], add_decomp
+
+            else:
+                return [add["p-value"].round(4), acf_a, mult["p-value"].round(4), acf_m, "multiplicative"], mult_decomp
+
+        elif add["p-value"].round(4) < mult["p-value"].round(4):
+            #print("opcion 2")
+            return [add["p-value"].round(4), acf_a, mult["p-value"].round(4), acf_m, "additive"], add_decomp
+
         else:
-            print("Multiplicative")
+            #print("opcion 3")
+            return [add["p-value"].round(4), acf_a, mult["p-value"].round(4), acf_m, "multiplicative"], mult_decomp
 
     # Modulo: Computo de tiempos sobre un proceso
     def get_time_process(self, seg):
