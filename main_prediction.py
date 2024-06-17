@@ -49,7 +49,7 @@ class Main_Model_Prediction():
 
     #@jit(target_backend='cuda', nopython=True)
     def main(self):
-        test = False
+        test = True
         try:
             start_time = time()
             # Incializacion de clases (Metodo Contructor)
