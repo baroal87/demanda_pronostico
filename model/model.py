@@ -3,6 +3,7 @@
 
 import pandas as pd
 import numpy as np
+np.bool = np.bool_
 from math import log, exp, sqrt
 from dateutil.relativedelta import relativedelta
 
@@ -39,9 +40,12 @@ from scipy.stats import uniform
 
 from mango import scheduler, Tuner
 
-from gluonts.dataset.common import ListDataset
-from gluonts.torch.model.deepar import DeepAREstimator
-from gluonts.mx.trainer import Trainer
+#from gluonts.dataset.common import ListDataset
+#from gluonts.torch.model.deepar import DeepAREstimator
+#from gluonts.mx.model.deepar import DeepAREstimator
+#from gluonts.mx.trainer import Trainer
+#from gluonts.evaluation.backtest import make_evaluation_predictions
+#from tqdm.autonotebook import tqdm
 
 #from numba import jit, cuda
 #import torch
@@ -434,8 +438,8 @@ class Model_Series_Times():
         forecast = model.predict(future_data)
 
         name_col_real = col_serie[1] + "_real"
-        #name_col_pred = col_serie[1] + "_pred"
-        name_col_pred = col_serie[1]
+        name_col_pred = col_serie[1] + "_pred"
+        #name_col_pred = col_serie[1]
         #test[name_col_pred] = forecast.yhat.values
         forecast.rename(columns = {"ds": col_serie[0], "yhat": name_col_pred}, inplace = True)
         test = pd.merge(test, forecast[[col_serie[0], name_col_pred]], how = "left", on = [col_serie[0]])
@@ -786,6 +790,9 @@ class Model_Series_Times():
             if coef_det < 0:
                 coef_det = abs(coef_det)
 
+            elif coef_det > 1:
+                coef_det = 0
+
             temp = pd.DataFrame()
             temp["model"] = [col]
             temp["mae"] = [mae]
@@ -807,34 +814,91 @@ class Model_Series_Times():
         data = data.dropna().reset_index(drop = True)
         total_data = len(data)
         fill_data = int(round((total_data * 20) / 100))
+        if fill_data > 90:
+            fill_data = 90
+
+        else:
+            fill_data = 10
         #start = pd.Timestamp(min_date, freq="H")
 
         train = data.loc[:fill_data]
         train = train[[col_serie[0], col_serie[1]]].rename(columns = {col_serie[0]: "date", col_serie[1]: "y"})
-        min_date = train[col_serie[0]].min()
-        train_ds = ListDataset([{'target': train.y, 'start': min_date}], freq = 'M')
+        min_date = train.date.min()
+        train_ds = ListDataset([{'target': train.y, 'start': min_date}], freq = 'D')
 
         test = data.loc[fill_data:]
         test = test[[col_serie[0], col_serie[1]]].rename(columns = {col_serie[0]: "date", col_serie[1]: "y"})
-        min_date = test[col_serie[0]].min()
-        test_ds = ListDataset([{'target': test.y, 'start': min_date}], freq = 'M')
+        min_date = test.date.min()
+        test_ds = ListDataset([{'target': test.y, 'start': min_date}], freq = 'D')
 
-        estimator = DeepAREstimator(prediction_length = 28,
-                                    context_length = 100,
-                                    freq= "M",
-                                    trainer = Trainer(#ctx = "cpu", # remove if running on windows
-                                                    epochs = 5,
-                                                    learning_rate = 1e-3,
-                                                    num_batches_per_epoch = 100)
-                                    )
+        """
+        model = DeepAREstimator(prediction_length = 28,
+                                context_length = 100,
+                                freq = "D",
+                                trainer = Trainer(#ctx="gpu", # remove if running on windows
+                                                epochs = 50,
+                                                learning_rate = 1e-3,
+                                                num_batches_per_epoch = 100)
+                                )
+        #"""
+        
+        model = DeepAREstimator(freq = 'D', 
+                                prediction_length = fill_data,
+                                context_length = fill_data,
+                                num_layers = 4, 
+                                lr = 1e-3,
+                                trainer_kwargs = {"devices": "auto",
+                                                'accelerator': 'gpu', 
+                                                'max_epochs': 100,
+                                                "strategy": "ddp"}
+                                )
 
-        predictor = estimator.train(train_ds)
-        predictions = predictor.predict(test_ds)
-        predictions = list(predictions)[0]
-        print(predictions)
+        predictor = model.train(train_ds)
+        #predictions = predictor.predict(test_ds)
+        #predictions = list(predictions)[0]
+        #print(predictions)
+        #print("---"*30)
+
+        #predictions = predictions.quantile(0.5)
+        #print(predictions)
+        #print("---"*30)
+
+        forecasts = list(predictor.predict(test_ds))
+        print(forecasts)
+        print(min_date)
+        print(test.date.max())
         print("---"*30)
-        predictions = predictions.quantile(0.5)
-        print(predictions)
+
+        forecast_it, ts_it = make_evaluation_predictions(dataset = test_ds,  # test dataset
+                                                        predictor = predictor,  # predictor
+                                                        num_samples = len(test),  # number of sample paths we want for evaluation
+                                                        )
+
+        forecasts_2 = list(forecast_it)
+        print(len(forecasts_2))
+        print(len(test))
+        tss = list(ts_it)
+        print(tss)
+        print("---"*30)
+        print(test_ds)
+        print("---"*30)
+
+        all_preds = list()
+        for item in forecasts_2:
+            #family = item.item_id
+            p = item.samples.mean(axis=0)
+            p10 = np.percentile(item.samples, 10, axis=0)
+            p90 = np.percentile(item.samples, 90, axis=0)
+            dates = pd.date_range(start = item.start_date.to_timestamp(), periods = len(p), freq ='D')
+            print(dates)
+            family_pred = pd.DataFrame({'date': dates, 'pred': p, 'p10': p10, 'p90': p90})
+            all_preds += [family_pred]
+        all_preds = pd.concat(all_preds, ignore_index=True)
+        all_preds = all_preds.merge(test, on = ['date'], how='left')
+        print(all_preds)
+
+
+        #print(r2_score( list(test_ds)[0]['target'][-28:], predictions))
 
 
     # Modulo:
