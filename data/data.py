@@ -57,7 +57,7 @@ class Queries():
 
         return data
 
-    # Modulo:
+    # Modulo: Agrupamiento de datos para los modelos
     def get_grouped_data_model(self, data, col_gran, var_obs, type_model = 2):
         if type_model == 1:
             #data = data.groupby(col_gran[:-1]).agg(date = (col_gran[-1], 'min'), sales = (var_obs[1], 'sum')).reset_index()
@@ -127,7 +127,7 @@ class Queries():
             print(" >> Archivo Guardado correctamente")
             print("---"*20)
 
-    # Modulo:
+    # Modulo: uardado de graficas de estacionalidades
     def save_graph_seasonal(self, graph, name_graph, name_file, col_gran, period, functions):
         # Plot the filtered data without outliers
         if not self.test:

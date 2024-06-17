@@ -298,8 +298,8 @@ class Main_Demand_Series_Times():
 
     # Modulo: Entrenamiento, prediccion, validacion y seleccion del mejor modelo ajustado a la serie
     def model_training(self, data, data_demand, data_comp_seasonal, col_gran, col_serie, col_obs_abc, period):
-        select_models = [1, 2, 3, 4, 5 , 6, 7]
-        #select_models = [5]
+        #select_models = [1, 2, 3, 4, 5 , 6, 7]
+        select_models = [0]
         data = self.functions.set_catgory_data(data.copy(), data_demand.copy(), col_gran)
         data_comp_seasonal = pd.merge(data_comp_seasonal, data_demand[["label", "category_behavior", "flag_new"]], how = "left", on = 'label')
         data_comp_seasonal = data_comp_seasonal[(data_comp_seasonal.flag_new != 1) | (data_comp_seasonal.category_behavior != "N/A")]
@@ -343,6 +343,9 @@ class Main_Demand_Series_Times():
 
             print("\n >>> Modelos: Prophet, AutoArima, ARIMA & Croston <<< \n")
             for name, group in df_model_1.groupby(segment):
+                if 0 in select_models:
+                    self.model.get_model_ma(group.copy(), col_serie, period, size_period = 3, function = self.functions)
+
                 if (1 in select_models) | (2 in select_models) | (3 in select_models):
                     start_time_model = time()
                     data_metric, col_pred = self.model.get_models_statsForecast(group.copy(), col_serie)
@@ -423,6 +426,7 @@ class Main_Demand_Series_Times():
                 #break
             #break
         
+        sys.exit()
         data_metric = pd.DataFrame()
         for index, df in data_frame_metric.items():
             index = str(index).split("-")
@@ -433,7 +437,7 @@ class Main_Demand_Series_Times():
 
         return data_metric
 
-    # Modulo:
+    # Modulo: Generacion de graficas estacionarias
     def plot_graph_series(self, data, col_gran, col_serie, name_file, period):
         data_comp_seasonal = []
         fill_data = [col_serie[0]]
@@ -455,7 +459,7 @@ class Main_Demand_Series_Times():
         data_comp_seasonal = pd.DataFrame.from_dict(data_comp_seasonal)
         return data_comp_seasonal
 
-    # Modulo:
+    # Modulo: Analisis del comportamiento por clasificacion ABC
     def data_hml(self, data, data_demand, col_gran, col_hml, dict_hml = {"h": 20, "m":30, "l":50}):
         print("####"*30)
         #col_hml = ['price', "sales", "N/A"]
@@ -605,6 +609,7 @@ class Main_Demand_Series_Times():
         #print("\n >>> DataFrame: Detail HML <<< \n")
         #data_hml_detail = pd.merge(data_hml_detail, df_detail, how = "left", on = ['granularity', "category_behavior", "category_abc"])
         #print(data_hml_detail.head(10))
+        df_detail = df_detail.reset_index(drop = True)
         print(df_detail.head(10))
         print("####"*30)
         
@@ -704,7 +709,6 @@ class Main_Demand_Series_Times():
             data_fsct = self.functions.get_forecastability(data_final.copy())
             data_final = pd.merge(data_final, data_fsct[["label", "forecastability"]], how = "left", on = ["label"])
             data_hml, data_hml_detail = self.data_hml(data.copy(), data_final.copy(), col_gran, col_obs_hml)
-            sys.exit()
 
             print("\n >>> Dataframe: Final - Fase 1 <<< \n")
             columns = ["granularity", "label", 'active', 'cv2']
@@ -717,16 +721,17 @@ class Main_Demand_Series_Times():
             print("\n > Volumen: ", data_final.shape)
             print("---"*20)
 
-            #print("\n >>> Dataframe: Estacionalidades <<< \n")
-            #data_comp_seasonal = self.plot_graph_series(data.copy(), col_gran.copy(), col_serie, name_file, period)
-            #print(data_comp_seasonal.head())
-            #print("###"*30)
+            print("\n >>> Dataframe: Estacionalidades <<< \n")
+            data_comp_seasonal = self.plot_graph_series(data.copy(), col_gran.copy(), col_serie, name_file, period)
+            print(data_comp_seasonal.head())
+            print("###"*30)
             
             ###########################################
             print("\n >> Proceso: Entrenamiento, validaciones y seleccion del mejor modelo <<<\n")
 
             # Proceso: Entrenamientos, validacion y generacion de metricas
-            #data_metric = self.model_training(data, data_final, data_comp_seasonal, col_gran, col_serie, col_obs_abc, period)
+            data_metric = self.model_training(data, data_final, data_comp_seasonal, col_gran, col_serie, col_obs_abc, period)
+            sys.exit()
             data_metric = self.queries.get_data_file("result/data_Atom_agu/month/data_Atom_agu_metrics.csv")
 
             print("\n >>> DataFrame: Metricas de Modelos <<<\n")

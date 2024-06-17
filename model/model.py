@@ -3,9 +3,10 @@
 
 import pandas as pd
 import numpy as np
-np.bool = np.bool_
+#np.bool = np.bool_
 from math import log, exp, sqrt
 from dateutil.relativedelta import relativedelta
+import sys
 
 #### Modelos ####
 from lightgbm import LGBMRegressor
@@ -39,6 +40,7 @@ from sklearn.model_selection import ParameterGrid
 from scipy.stats import uniform
 
 from mango import scheduler, Tuner
+import bottleneck as bn
 
 #from gluonts.dataset.common import ListDataset
 #from gluonts.torch.model.deepar import DeepAREstimator
@@ -900,7 +902,6 @@ class Model_Series_Times():
 
         #print(r2_score( list(test_ds)[0]['target'][-28:], predictions))
 
-
     # Modulo:
     def get_model_forecasters(self, data, var_obs):
         data = data.dropna().reset_index(drop = True)
@@ -998,3 +999,49 @@ class Model_Series_Times():
         test[name_col_pred] = test[name_col_pred].round(2)
         #test.rename(columns = {col_serie[1]: name_col_real}, inplace = True)
         print(test.head(10))
+
+    # Modulo: Modelo de Medias Moviles (MA)
+    def get_ma(self, values, win = 2):
+        ma = {}
+        #print(values)
+
+        # Cumsum - convolne
+        #cumsum = np.cumsum(np.insert(values, 0, 0)) 
+        #ma["ma_cumsum"] = (cumsum[values:] - cumsum[: - win]) / float (win)
+
+        # Convolne
+        ma["ma_convolne"] = np.convolve(values, np.ones(win), "valid") / win
+
+        # bottlneck
+        #ma["ma_bottlneck"] = bn.move_mean(values, window = win, min_count = None)
+
+        # Rolling
+        #ma["ma_rolling"] = pd.Series(values).rolling(window = win).mean().iloc[win - 1:].values
+
+        return ma
+
+    # Modulo: Generacion de medias moviles
+    def get_model_ma(self, data, col_serie, period, size_period, function):
+        data = data.dropna().reset_index(drop = True)
+        data = data.sort_values([col_serie[0]], ascending = True).reset_index(drop = True)
+        data_serie = function.validate_data_serie_ma(data, col_serie, period, size_period)
+
+        data_serie = data_serie[col_serie].set_index([col_serie[0]])
+        data_ma = self.get_ma(data_serie[col_serie[1]].values.tolist())
+        #print(data_ma)
+        limit = int(len(data_serie) / size_period)
+
+        df = pd.DataFrame()
+        for key, fsct in data_ma.items():
+            fsct = [fsct[i: i + limit] for i in range(0, len(fsct), limit)]
+            temp = pd.DataFrame()
+            temp["segment"] = data.segment.unique().tolist()
+            temp["model_type"] = [key]
+            for idx, value in enumerate(fsct):
+                name_col = "per_" + period + "_" + str(idx + 1)
+                temp[name_col] = sum(value)
+                
+            df = pd.concat([temp, df], axis = 0, ignore_index = False)
+
+        df.reset_index(drop = True, inplace = True)
+        return df

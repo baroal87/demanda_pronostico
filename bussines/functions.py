@@ -10,6 +10,7 @@ from os.path import isfile, join
 
 import math
 from dateutil.relativedelta import relativedelta
+import datetime
 
 from scipy import stats
 import matplotlib.pyplot as plt
@@ -883,10 +884,15 @@ class Functions():
 
     # Modulo: Generacion de las caracteristicas del clasificador ABC y XYZ
     def get_detail_abc(self, data):
-        grouped_abc = data.groupby(['granularity', 'category_abc']).agg(count_abc = ('label', 'count'), count_label = ('label', 'nunique'), total_revenue = ('total_revenue', 'sum')).reset_index()
+        grouped_abc = data.groupby(['granularity', 'category_abc']).agg(count_abc = ('label', 'count'), 
+                                                                        count_label = ('label', 'nunique'), 
+                                                                        total_revenue = ('total_revenue', 'sum')).reset_index()
         grouped_abc["%_rev"] =  grouped_abc.groupby(["granularity"])["total_revenue"].apply(lambda x:  round(100 * (x / x.sum()))).reset_index(drop = True)
         grouped_abc["%_abc"] =  grouped_abc.groupby(["granularity"])["count_abc"].apply(lambda x:  round(100 * (x / x.sum()))).reset_index(drop = True)
         grouped_abc['%_rank'] = round((grouped_abc['count_label'] / grouped_abc['count_label'].sum()) * 100, 2)
+        #grouped_abc['rank_values'] = grouped_abc.groupby(["granularity", "count_label"])['count_label'].apply(lambda x:  x.sum()).reset_index(drop = True)
+        grouped_abc.rename(columns = {"count_label": "rank"}, inplace = True)
+        grouped_abc.drop("count_abc", axis = 1, inplace = True)
 
         grouped_xyz = data.groupby(['granularity', 'category_xyz']).agg(count_xyz = ('label', 'count')).reset_index()
         grouped_xyz["%_xyz"] =  grouped_xyz.groupby(["granularity"])["count_xyz"].apply(lambda x:  round(100 * (x / x.sum()))).reset_index(drop = True)
@@ -895,14 +901,39 @@ class Functions():
         #grouped_rank["total"] =  grouped_rank.groupby(["granularity"])["total_sales"].apply(lambda x:  round(100 * (x / x.sum()))).reset_index(drop = True)
         #grouped_rank["%_rank"] = round(grouped_rank.count_rank / grouped_rank.total, 2) * 100
         #print(grouped_rank)
-        grouped = data.groupby(['granularity', 'category_abc']).agg(count_abc = ('label', 'count'), count_label = ('label', 'nunique'), total_revenue = ('total_revenue', 'sum')).reset_index()
+        grouped = data.groupby(['granularity', "label", 'category_abc']).agg(count_abc = ('label', 'count'), 
+                                                                    count_label = ('label', 'nunique'), 
+                                                                    total_revenue = ('total_revenue', 'sum')).reset_index()
+
         grouped = grouped.groupby(['granularity'])
+        rank = {"A": 20, "B": 50, "C": 100}
         for name, group in grouped:
-            #print(group)
-            total = group.count_label.sum()
-            print(group.count_label / total)
+            total = group.total_revenue.sum()
+            for key in group.category_abc.unique().tolist():
+                temp = group[group.category_abc == key]
+                #print(group.head())
+                #total = group.count_label.sum()
+                #print(group.count_label / total)
+
+                temp = temp.sort_values(['total_revenue'], ascending = False)
+                temp["percentage"] =  round((temp.total_revenue / total) * 100, 2)
+                temp["cumsum_perc"] = temp.percentage.cumsum()
+                temp.loc[temp.cumsum_perc > 100, "cumsum_perc"] = 100
+                #print(temp.tail(3))
+                #print(temp.shape)
+
+                """
+                if "A" == list(name)[-1]:
+                    print(len(temp[(temp.cumsum_perc >= 0) & (temp.cumsum_perc <= rank[key])]))
+
+                elif "B" == list(name)[-1]:
+                    print(len(temp[(temp.cumsum_perc > rank["A"]) & (temp.cumsum_perc <= rank[key])]))
+
+                else:
+                    print(len(temp[(temp.cumsum_perc > rank["B"]) & (temp.cumsum_perc <= rank[key])]))
+                """
             #break
-        print("--------------------------+++++++++++++++++++++++++++++++")
+        #print("--------------------------+++++++++++++++++++++++++++++++")
 
         #data = pd.merge(grouped_abc, grouped_xyz, how = "left", on = ["label"])
         data = pd.concat([grouped_abc, grouped_xyz.drop("granularity", axis = 1)], axis = 1, ignore_index = False)
@@ -1167,6 +1198,42 @@ class Functions():
         else:
             #print("opcion 3")
             return [add["p-value"].round(4), acf_a, mult["p-value"].round(4), acf_m, "multiplicative"], mult_decomp
+
+    # Modulo:
+    def validate_data_serie_ma(self, data, col_serie, period, size_period):
+        end_date = data[col_serie[0]].max()
+        if period == "month":
+            days = 30 * size_period
+            start_date = end_date + relativedelta(days = -days)
+
+        elif period == "week":
+            days = 7 * size_period
+            start_date = end_date + relativedelta(days = -days)
+
+        else:
+            days = size_period
+            start_date = end_date + relativedelta(days = -days)
+
+        data_serie = data[data[col_serie[0]] >= start_date]
+
+        if len(data_serie) < days:
+            print("\n > La data contiene dias faltantes... \n")
+            # Determinar los intervalos
+            #start_date = data.fecha.min()
+            #end_date = datetime.date.today()
+            data_serie.drop_duplicates(col_serie[0], inplace = True)
+
+            # Generacion del dataframe de fechas y rellenado de los campos vacios con la variable observacion
+            data_serie.set_index(col_serie[0], inplace = True)
+            date_index = pd.date_range(start = start_date, end = end_date, freq = 'd')
+            #data_serie = data_serie.reindex(date_index, method = 'bfill')
+            data_serie = data_serie.reindex(date_index)
+            data_serie[col_serie[1]].fillna(0, inplace = True) 
+            data_serie.fillna(method = 'bfill', inplace = True)
+            data_serie = data_serie.reset_index().rename(columns = {'index': col_serie[0]})
+            data_serie[col_serie[0]] = pd.to_datetime(data_serie[col_serie[0]])
+
+        return data_serie
 
     # Modulo: Computo de tiempos sobre un proceso
     def get_time_process(self, seg):
