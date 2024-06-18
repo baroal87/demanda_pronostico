@@ -752,7 +752,6 @@ class Functions():
         # Pivoteo en base al parseo del año/mes sobre las identificadores y sumatoria de los ingresos
         data = data.pivot(index = "label", columns = name_col, values = 'revenue').reset_index().fillna(0)
         data_xyz = self.get_data_XYZ(data.copy())
-        print(data.shape)
 
         # Computo del total de los ingresos
         data['total'] = data.iloc[:, 1:].sum(axis =  1, numeric_only = True)
@@ -1154,6 +1153,7 @@ class Functions():
 
         # Print Dickey-Fuller test results
         #print ('Results of Dickey-Fuller Test:')
+        
 
         dfoutput = pd.Series(dftest[0:4], index = ['Test Statistic','p-value','#Lags Used','Number of Observations Used'])
         for key,value in dftest[4].items():
@@ -1162,7 +1162,7 @@ class Functions():
 
         return dfoutput
 
-    # Modulo:
+    # Modulo: Identificador de tipo y metricas para determinar la estacionalidad
     def get_graph_series_data(self, data, col_serie, period):
         dict_period = {"daily": 7, "week": 52, "month": 12}
         data = data.set_index(col_serie[0])
@@ -1185,7 +1185,7 @@ class Functions():
         # Evaluacion de metricas para determinar si la serie es mult o add
         if add["p-value"].round(4) == mult["p-value"].round(4):
             #print("opcion 1")
-            if acf_a > acf_m:
+            if acf_a < acf_m:
                 return [add["p-value"].round(4), acf_a, mult["p-value"].round(4), acf_m, "additive"], add_decomp
 
             else:
@@ -1199,7 +1199,7 @@ class Functions():
             #print("opcion 3")
             return [add["p-value"].round(4), acf_a, mult["p-value"].round(4), acf_m, "multiplicative"], mult_decomp
 
-    # Modulo:
+    # Modulo: Validacion de intervalos de tiempo para el computo del fsct de medias moviles (MA)
     def validate_data_serie_ma(self, data, col_serie, period, size_period):
         end_date = data[col_serie[0]].max()
         if period == "month":
@@ -1210,14 +1210,14 @@ class Functions():
             days = 7 * size_period
             start_date = end_date + relativedelta(days = -days)
 
-        else:
+        elif period == "daily":
             days = size_period
             start_date = end_date + relativedelta(days = -days)
 
         data_serie = data[data[col_serie[0]] >= start_date]
 
         if len(data_serie) < days:
-            print("\n > La data contiene dias faltantes... \n")
+            #print("\n > La data contiene dias faltantes... \n")
             # Determinar los intervalos
             #start_date = data.fecha.min()
             #end_date = datetime.date.today()
@@ -1234,6 +1234,23 @@ class Functions():
             data_serie[col_serie[0]] = pd.to_datetime(data_serie[col_serie[0]])
 
         return data_serie
+
+    # Modulo:
+    def validate_data_serie_models(self, start_date, period, size_period):
+        if period == "month":
+            days = 30 * size_period
+            end_date = start_date + relativedelta(days = days)
+
+        elif period == "week":
+            days = 7 * size_period
+            end_date = start_date + relativedelta(days = days)
+
+        elif period == "daily":
+            days = size_period
+            end_date = start_date + relativedelta(days = days)
+
+        date_index = pd.date_range(start = start_date, end = end_date, freq = 'd')
+        return pd.DataFrame(date_index, columns = ['date'])
 
     # Modulo: Computo de tiempos sobre un proceso
     def get_time_process(self, seg):
