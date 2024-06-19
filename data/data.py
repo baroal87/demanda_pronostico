@@ -129,7 +129,7 @@ class Queries():
             print("---"*20)
 
     # Modulo: uardado de graficas de estacionalidades
-    def save_graph_seasonal(self, graph, name_graph, name_file, col_gran, period, functions):
+    def save_graph_seasonal(self, graph, name_graph, name_file, col_gran, period, cat_xyz, functions):
         # Plot the filtered data without outliers
         if not self.test:
             print("\n >> Proceso de guardado (Grafica)")
@@ -147,6 +147,14 @@ class Queries():
 
             # Validacion de subcarpetas - columna (variable de granuralidad)
             name_folder = name_folder + col_gran + "/"
+            functions.validate_path(name_folder)
+
+            # Validacion de subcarpetas - columna (variable categoria ABC - HML)
+            name_folder = name_folder + "AH/"
+            functions.validate_path(name_folder)
+
+            # Validacion de subcarpetas - columna (variable categoria XYZ)
+            name_folder = name_folder + cat_xyz + "/"
             functions.validate_path(name_folder)
 
             # Definicion del nombre de la grafica

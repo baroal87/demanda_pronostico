@@ -241,7 +241,6 @@ class Model_Series_Times():
 
         return best_params, preprocessor
 
-    #@jit(target_backend='cuda', nopython=True)
     # Modulo: Modelo (Light Gradient-Boosting Machine - LGBM) para la prediccion de forecast
     def get_model_LGBM(self, data, columns_num, columns_cat, col_pred):
         column = columns_cat + columns_num
@@ -328,7 +327,6 @@ class Model_Series_Times():
 
         return data_fsct
     
-    #@jit(target_backend='cuda', nopython=True)
     # Modulo: Modelo Catboost
     def get_model_CatBoost(self, data, columns_num, columns_cat, col_pred):
         # Concatenacion de las valriables para las filtraciones del historico
@@ -473,6 +471,7 @@ class Model_Series_Times():
 
         else:
             model.fit(train[[col_serie[0], name_col_transf]].rename(columns = {col_serie[0]: "ds", name_col_transf: "y"}))
+
         #forecast = model_fbp.predict(test[[col_serie[0], name_col_transf]].rename(columns = {col_serie[0]: "ds"}))
         #forecast = model_fbp.predict(test[[col_serie[0], col_serie[1]]].rename(columns = {col_serie[0]: "ds"}))
         diff_days = (test[col_serie[0]].max() - test[col_serie[0]].min()).days
@@ -526,14 +525,25 @@ class Model_Series_Times():
         # Proceso: Generacion de fsct en base a intevarlo de periodos determinados
         data_serie = self.validate_data_serie_models(data[col_serie[0]].max(), period, size_period)
         data_serie.rename(columns = {"date": col_serie[0]}, inplace = True)
-        diff_days = (data_serie[col_serie[0]].max() - data_serie[col_serie[0]].min()).days
+        
+        # diff_days -> El fsct debe contemplarse apartir de la ultima fecha del train_set (Se suman las fechas del test y las predicciones a futuro)
+        diff_days = (data_serie[col_serie[0]].max() - test[col_serie[0]].min()).days
         future_data = model.make_future_dataframe(periods = diff_days, freq = 'D')
+        print(future_data.tail())
         forecast = model.predict(future_data)
         forecast.rename(columns = {"ds": col_serie[0], "yhat": name_col_pred}, inplace = True)
         data_serie = pd.merge(data_serie, forecast[[col_serie[0], name_col_pred]], how = "left", on = [col_serie[0]])
+        
+        if flag_boxcox:
+            data_serie[name_col_pred] = inv_boxcox(data_serie[name_col_pred], lam)
+
+        else:
+            data_serie[name_col_pred] = self.minMaxScaler.inverse_transform(data_serie[[name_col_pred]])
+
         data_serie[name_col_pred] = data_serie[name_col_pred].round(2)
-        #print(data_serie.head())
-        #print("---"*30)
+        data_serie[name_col_pred] = data_serie[name_col_pred].abs()
+        print(data_serie.head())
+        print("---"*30)
         
         columns = data.columns.tolist()[:2]
         #data_fsct = self.get_data_fsct_model(data_serie[name_col_pred].values.tolist(), size_period, period, data.segment.unique().tolist()[0], "Prophet")
@@ -671,6 +681,13 @@ class Model_Series_Times():
         
         #data_serie = pd.merge(data_serie, forecast[[col_serie[0], name_col_pred]], how = "left", on = [col_serie[0]])
         data_serie[name_col_pred] = pred.tolist()
+
+        if flag_boxcox:
+            data_serie[name_col_pred] = inv_boxcox(data_serie[name_col_pred], lam)
+
+        else:
+            data_serie[name_col_pred] = self.scaler.inverse_transform(data_serie[[name_col_pred]])
+
         data_serie[name_col_pred] = data_serie[name_col_pred].round(2)
         #print(data_serie.head())
         #print("---"*30)
@@ -847,7 +864,6 @@ class Model_Series_Times():
         data_fsct = pd.DataFrame()
         size_model = len(models)
         col_pred = test.columns.tolist()[-size_model:]
-        columns = data.columns.tolist()[:2]
         #print(col_pred)
         for col in col_pred:
             if flag_boxcox:
@@ -883,26 +899,36 @@ class Model_Series_Times():
             temp["r2"] = [round(coef_det, 2)]
         
             data_metric = pd.concat([data_metric, temp], axis = 0, ignore_index = False)
+            
+        #print(test.head(20))
+        #print("---"*30)
 
-            # Proceso: Generacion de fsct en base a intevarlo de periodos determinados
-            data_serie = self.validate_data_serie_models(data["ds"].max(), period, size_period)
-            data_serie.rename(columns = {"date": "ds"}, inplace = True)
-            data_serie["unique_id"] = data.segment.unique().tolist()[0]
-            diff_days = (data_serie["ds"].max() - data_serie["ds"].min()).days
-            forecasts = sf.forecast(h = diff_days, fitted = True)
+        # Proceso: Generacion de fsct en base a intevarlo de periodos determinados
+        data_serie = self.validate_data_serie_models(data["ds"].max(), period, size_period)
+        data_serie.rename(columns = {"date": "ds"}, inplace = True)
+        data_serie["unique_id"] = data.segment.unique().tolist()[0]
+        #diff_days = (data_serie["ds"].max() - data_serie["ds"].min()).days
+        horizon = len(test) + len(data_serie)
+        forecasts = sf.forecast(h = horizon, fitted = True)
 
-            data_serie = pd.merge(data_serie, forecasts, how = "left", on = ["unique_id", "ds"])
+        data_serie = pd.merge(data_serie, forecasts, how = "left", on = ["unique_id", "ds"])
+        data_serie = data_serie.dropna().reset_index(drop = True)
+        
+        columns = data.columns.tolist()[:2]
+        for col in col_pred:
+            if flag_boxcox:
+                data_serie[col] = inv_boxcox(data_serie[col], lam)
+
+            else:
+                data_serie[col] = self.scaler.inverse_transform(data_serie[[col]])
+
+            data_serie[col] = data_serie[col].astype(float)
             data_serie[col] = data_serie[col].abs()
             data_serie[col] = data_serie[col].round(2)
-            #print(data_serie.head())
-            #print("---"*30)
 
-            #temp = self.get_data_fsct_model(data_serie[col].values.tolist(), size_period, period, data.segment.unique().tolist()[0], col)
             temp = self.get_data_fsct_model(data_serie[col].values.tolist(), size_period, period, data[columns[0]].unique().tolist()[0], data[columns[1]].unique().tolist()[0], col)
             data_fsct = pd.concat([data_fsct, temp], axis = 0, ignore_index = False)
 
-        #print(test.head(20))
-        #print("---"*30)
         data_metric = data_metric.reset_index(drop = True)
         data_fsct = data_fsct.reset_index(drop = True)
 
@@ -1140,7 +1166,7 @@ class Model_Series_Times():
             temp["type_model"] = [key]
             for idx, value in enumerate(fsct):
                 name_col = "ma_per_" + period + "_" + str(idx + 1)
-                temp[name_col] = sum(value)
+                temp[name_col] = round(sum(value), 2)
 
             df = pd.concat([temp, df], axis = 0, ignore_index = False)
 
@@ -1178,7 +1204,7 @@ class Model_Series_Times():
         temp["type_model"] = name_model
         for idx, value in enumerate(fsct):
             name_col = "model_per_" + period + "_" + str(idx + 1)
-            temp[name_col] = sum(value)
+            temp[name_col] = round(sum(value), 2)
 
         df = pd.concat([temp, df], axis = 0, ignore_index = False)
         df.reset_index(drop = True, inplace = True)

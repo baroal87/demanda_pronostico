@@ -300,7 +300,7 @@ class Main_Demand_Series_Times():
     #def model_training(self, data, data_demand, data_comp_seasonal, col_gran, col_serie, col_obs_abc, period, size_period):
     def model_training(self, data, data_demand, col_gran, col_serie, col_obs_abc, period, size_period):
         select_models = [0, 1, 2, 3, 4, 5 , 6, 7]
-        #select_models = [0, 6, 7]
+        #select_models = [0, 7]
         data = self.functions.set_catgory_data(data.copy(), data_demand.copy(), col_gran)
         #data_comp_seasonal = pd.merge(data_comp_seasonal, data_demand[["label", "category_behavior", "flag_new"]], how = "left", on = 'label')
         #data_comp_seasonal = data_comp_seasonal[(data_comp_seasonal.flag_new != 1) | (data_comp_seasonal.category_behavior != "N/A")]
@@ -351,6 +351,7 @@ class Main_Demand_Series_Times():
                     data_fsct_ma = pd.concat([data_fsct_ma, data_ma], axis = 0, ignore_index = False)
 
                 if (1 in select_models) | (2 in select_models) | (3 in select_models):
+                    print("\n >>> Models: statsForecast <<<")
                     start_time_model = time()
                     data_metric, col_pred, data_fsct = self.model.get_models_statsForecast(group.copy(), col_serie, period, size_period)
                     data_metric["label"] = list(name)[0]
@@ -365,6 +366,7 @@ class Main_Demand_Series_Times():
                     data_fsct_models = pd.concat([data_fsct_models, data_fsct], axis = 0, ignore_index = False)
 
                 if 4 in select_models:
+                    print("\n >>> Models: ARIMA <<<")
                     start_time_model = time()
                     data_metric, data_fsct = self.model.get_model_Arima(group.copy(), col_serie, period, size_period)
                     data_metric["label"] = list(name)[0]
@@ -386,6 +388,7 @@ class Main_Demand_Series_Times():
                 #data_frame_metric[metric_name] = data_metric
 
                 if 5 in select_models:
+                    print("\n >>> Models: Prophet <<<")
                     start_time_model = time()
                     #data_metric, data_fsct = self.model.get_model_prophet(group.copy(), col_serie = col_serie, period = period, type_seasonal = data_comp_seasonal[data_comp_seasonal.label == list(name)[0]].type_seasonal.values[0])
                     data_metric, data_fsct = self.model.get_model_prophet(group.copy(), col_serie = col_serie, period = period, size_period = size_period)
@@ -415,6 +418,7 @@ class Main_Demand_Series_Times():
             print("\n >>> Modelos: LGBM - CatBoost <<< \n")
             for name, group in df_model_2.groupby(segment):
                 if 6 in select_models:
+                    print("\n >>> Models: LGBM <<<")
                     start_time_model = time()
                     data_metric, model = self.model.get_model_LGBM(group.copy(), columns_num, columns_cat, col_pred = col_serie[1])
                     data_metric["label"] = list(name)[0]
@@ -430,6 +434,7 @@ class Main_Demand_Series_Times():
                     data_fsct_models = pd.concat([data_fsct_models, data_fsct], axis = 0, ignore_index = False)
                 
                 if 7 in select_models:
+                    print("\n >>> Models: CatBoost <<<")
                     start_time_model = time()
                     data_metric, model = self.model.get_model_CatBoost(group.copy(), columns_num, columns_cat, col_pred = col_serie[1])
                     data_metric["label"] = list(name)[0]
@@ -460,25 +465,44 @@ class Main_Demand_Series_Times():
         return data_metric, data_fsct_ma, data_fsct_models
 
     # Modulo: Generacion de graficas estacionarias
-    def plot_graph_series(self, data, col_gran, col_serie, name_file, period):
+    def plot_graph_series(self, data, data_final, col_gran, col_serie, name_file, period):
+        #data = pd.merge(data, data_final[["label", "category_abc", self.name_col_cat]], how = "left", on = ["label"])
         data_comp_seasonal = []
         fill_data = [col_serie[0]]
+        cont = 0
         for gran in col_gran:
             data[gran] = data[gran].astype(str)
             fill_data.insert(0, gran)
             temp = self.queries.grouped_data(data, fill_data, col_serie[1])
             temp["label"] = temp[fill_data[:-1]].apply("_".join, axis = 1)
-            for label in temp.label.unique().tolist():
-                metrics, seasonal_data = self.functions.get_graph_series_data(temp[temp.label == label][col_serie], col_serie, period)
-                data_comp_seasonal.append({"label": label, "p-value_add": metrics[0], "acf_add": metrics[1], "p-value_mult": metrics[2], "acf_mult": metrics[3], "type_seasonal": metrics[4]})
+            temp = pd.merge(temp, data_final[["label", "category_abc", "category_xyz", self.name_col]], how = "left", on = ["label"])
+            temp = temp[(temp.category_abc == "A") & (temp[self.name_col] == "h")]
+            
+            if len(temp) != 0:
+                for label in temp.label.unique().tolist():
+                    value_xyz = temp[temp.label == label].category_xyz.unique().tolist()[0]
+                    print(value_xyz)
+                    metrics, seasonal_data = self.functions.get_graph_series_data(temp[temp.label == label][col_serie], col_serie, period)
+                    data_comp_seasonal.append({"label": label, "p-value_add": metrics[0], "acf_add": metrics[1], "p-value_mult": metrics[2], "acf_mult": metrics[3], "type_seasonal": metrics[4]})
 
-                gran = "_".join(fill_data[:-1])
-                name_graph = label + "_" + "additive" if metrics[4] == "additive" else label + "_" + "multiplicative"
-                self.queries.save_graph_seasonal(seasonal_data, name_graph, name_file, gran, period, self.functions)
-                #break
+                    gran = "_".join(fill_data[:-1])
+                    name_graph = label + "_" + "additive" if metrics[4] == "additive" else label + "_" + "multiplicative"
+                    self.queries.save_graph_seasonal(seasonal_data, name_graph, name_file, gran, period, value_xyz, self.functions)
+                    #break
+
+            else:
+                cont += 1
             #break
 
-        data_comp_seasonal = pd.DataFrame.from_dict(data_comp_seasonal)
+        if cont == 0:
+            print("####"*30)
+            print("\n >>> Warning: No existen series de tipo \"A H\"\n")
+            print("####"*30)
+            data_comp_seasonal = pd.DataFrame()
+
+        else:
+            data_comp_seasonal = pd.DataFrame.from_dict(data_comp_seasonal)
+
         return data_comp_seasonal
 
     # Modulo: Analisis del comportamiento por clasificacion ABC
@@ -496,6 +520,10 @@ class Main_Demand_Series_Times():
             data["utility"] = data.revenue - (data[col_hml[1]] * data[col_hml[-1]])
             data["utility"] = data["utility"].round(2)
             fill_data = col_hml + ["revenue", "utility"]
+
+        # Definicion del nombre de la categoria
+        self.name_col = list(dict_hml.keys())
+        self.name_col = "category_" + "".join(self.name_col)
 
         data_hml = pd.DataFrame()
         data_hml_detail = pd.DataFrame()
@@ -520,9 +548,9 @@ class Main_Demand_Series_Times():
                 temp.loc[temp.cumsum_perc > 100, "cumsum_perc"] = 100
 
                 # Definicion del nombre de la categoria
-                name_col = list(dict_hml.keys())
-                name_col = "category_" + "".join(name_col)
-                temp[name_col] = np.nan
+                #name_col = list(dict_hml.keys())
+                #name_col = "category_" + "".join(name_col)
+                temp[self.name_col] = np.nan
 
                 limit_inf = 0
                 limit_sup = list(dict_hml.values())[0]
@@ -535,13 +563,13 @@ class Main_Demand_Series_Times():
                     cont += 1
                     colums.append(key + " - " + str(perc) + "%")
                     values.append(len(temp[(temp.cumsum_perc > limit_inf) & (temp.cumsum_perc <= limit_sup)]))
-                    temp.loc[(temp.cumsum_perc > limit_inf) & (temp.cumsum_perc <= limit_sup), name_col] = key
+                    temp.loc[(temp.cumsum_perc > limit_inf) & (temp.cumsum_perc <= limit_sup), self.name_col] = key
                     limit_inf = limit_sup
 
                     if cont < len(list(dict_hml.values())):
                         limit_sup += list(dict_hml.values())[cont]
 
-                data_hml = pd.concat([data_hml, temp[["granularity", "label", "category_behavior", "category_abc", name_col]].drop_duplicates()], axis = 0, ignore_index = False)
+                data_hml = pd.concat([data_hml, temp[["granularity", "label", "category_behavior", "category_abc", self.name_col]].drop_duplicates()], axis = 0, ignore_index = False)
                 temp = temp[["granularity", "category_behavior", "category_abc"]].drop_duplicates()
                 temp[colums] = values
 
@@ -560,9 +588,9 @@ class Main_Demand_Series_Times():
                 grouped.loc[grouped.cumsum_perc > 100, "cumsum_perc"] = 100
 
                 # Definicion del nombre de la categoria
-                name_col = list(dict_hml.keys())
-                name_col = "category_" + "".join(name_col)
-                grouped[name_col] = np.nan
+                #name_col = list(dict_hml.keys())
+                #name_col = "category_" + "".join(name_col)
+                grouped[self.name_col] = np.nan
 
                 temp2 = grouped.groupby(['granularity', 'category_behavior', 'category_abc'])
                 for name, group in temp2:
@@ -579,13 +607,13 @@ class Main_Demand_Series_Times():
                         cont += 1
                         colums.append(key + " - " + str(perc) + "%")
                         values.append(len(group[(group.cumsum_perc > limit_inf) & (group.cumsum_perc <= limit_sup)]))
-                        group.loc[(group.cumsum_perc > limit_inf) & (group.cumsum_perc <= limit_sup), name_col] = key
+                        group.loc[(group.cumsum_perc > limit_inf) & (group.cumsum_perc <= limit_sup), self.name_col] = key
                         limit_inf = limit_sup
 
                         if cont < len(list(dict_hml.values())):
                             limit_sup += list(dict_hml.values())[cont]
                             
-                    data_hml = pd.concat([data_hml, group[["granularity", "label", "category_behavior", "category_abc", name_col]].drop_duplicates()], axis = 0, ignore_index = False)
+                    data_hml = pd.concat([data_hml, group[["granularity", "label", "category_behavior", "category_abc", self.name_col]].drop_duplicates()], axis = 0, ignore_index = False)
                     group = group[["granularity", "category_behavior", "category_abc"]].drop_duplicates()
                     group[colums] = values
 
@@ -730,7 +758,7 @@ class Main_Demand_Series_Times():
             print("---"*20)
 
             print("\n >>> Dataframe: Estacionalidades <<< \n")
-            data_comp_seasonal = self.plot_graph_series(data.copy(), col_gran.copy(), col_serie, name_file, period)
+            data_comp_seasonal = self.plot_graph_series(data.copy(), data_final.copy(), col_gran.copy(), col_serie, name_file, period)
             print(data_comp_seasonal.head())
             print("\n", "###"*30)
             
