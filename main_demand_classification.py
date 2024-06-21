@@ -300,14 +300,14 @@ class Main_Demand_Series_Times():
     #def model_training(self, data, data_demand, data_comp_seasonal, col_gran, col_serie, col_obs_abc, period, size_period):
     def model_training(self, data, data_demand, col_gran, col_serie, col_obs_abc, period, size_period):
         select_models = [0, 1, 2, 3, 4, 5 , 6, 7]
-        #select_models = [0, 7]
+        #select_models = [0, 1]
         data = self.functions.set_catgory_data(data.copy(), data_demand.copy(), col_gran)
         #data_comp_seasonal = pd.merge(data_comp_seasonal, data_demand[["label", "category_behavior", "flag_new"]], how = "left", on = 'label')
         #data_comp_seasonal = data_comp_seasonal[(data_comp_seasonal.flag_new != 1) | (data_comp_seasonal.category_behavior != "N/A")]
         #data_comp_seasonal.drop(["p-value_add", "acf_add", "p-value_mult", "acf_mult", "flag_new", "category_behavior"], axis = 1, inplace = True)
 
         # Identificador de columnas (cat_beh_gran & fsct_gran)
-        size = len(col_gran)
+        size = len(col_gran) if len(col_gran) != 1 else 2
         columns = data.columns.tolist()
         index = len(col_gran) * size
         col_cat = columns[-index:]
@@ -346,7 +346,10 @@ class Main_Demand_Series_Times():
 
             print("\n >>> Modelos: Prophet, AutoArima, ARIMA & Croston <<< \n")
             for name, group in df_model_1.groupby(segment):
+                print("+++"*30)
+                print(name)
                 if 0 in select_models:
+                    print("\n >>> Models: MA <<<")
                     data_ma = self.model.get_model_ma(group.copy(), col_serie, period, size_period, function = self.functions)
                     data_fsct_ma = pd.concat([data_fsct_ma, data_ma], axis = 0, ignore_index = False)
 
@@ -417,6 +420,10 @@ class Main_Demand_Series_Times():
 
             print("\n >>> Modelos: LGBM - CatBoost <<< \n")
             for name, group in df_model_2.groupby(segment):
+                #if not name[0] in ["4546_94", "3198_94", "3631_94", "3861_94", "3055_94"]:
+                #   continue
+                print("+++"*30)
+                print(name)
                 if 6 in select_models:
                     print("\n >>> Models: LGBM <<<")
                     start_time_model = time()
@@ -757,10 +764,10 @@ class Main_Demand_Series_Times():
             print("\n > Volumen: ", data_final.shape)
             print("---"*20)
 
-            print("\n >>> Dataframe: Estacionalidades <<< \n")
-            data_comp_seasonal = self.plot_graph_series(data.copy(), data_final.copy(), col_gran.copy(), col_serie, name_file, period)
-            print(data_comp_seasonal.head())
-            print("\n", "###"*30)
+            #print("\n >>> Dataframe: Estacionalidades <<< \n")
+            #data_comp_seasonal = self.plot_graph_series(data.copy(), data_final.copy(), col_gran.copy(), col_serie, name_file, period)
+            #print(data_comp_seasonal.head())
+            #print("\n", "###"*30)
             
             ###########################################   ###########################################   ###########################################
             print("\n >> Proceso: Entrenamiento, validaciones y seleccion del mejor modelo <<<\n")
@@ -776,36 +783,14 @@ class Main_Demand_Series_Times():
             print("---"*20)
 
             print("\n >>> DataFrame: Forecast Medias Moviles (MA) <<<\n")
-            """
-            df = data_fsct_ma["segment"].str.split("_", expand = True)
-            columns = df.columns.tolist()
-            for col in columns:
-                df[col] = df[col].astype(str)
-
-            df["label"] = df[columns[:-1]].apply("_".join, axis = 1)
-            df["category_behavior"] = df[columns[-1]]
-
-            data_fsct_ma = pd.concat([data_fsct_ma, df[["label", "category_behavior"]]], axis = 1)
-            data_fsct_ma.drop("segment", axis = 1, inplace = True)
-            """
             print(data_fsct_ma.head())
             print("\n > Volumen: ", data_fsct_ma.shape)
+            data_fsct_ma = data_fsct_ma[data_fsct_ma.type_model == "MA"]
             print("---"*20)
 
             print("\n >>> DataFrame: Forecast Modelos <<<\n")
-            """
-            df = data_fsct_models["segment"].str.split("_", expand = True)
-            columns = df.columns.tolist()
-            for col in columns:
-                df[col] = df[col].astype(str)
-
-            df["label"] = df[columns[:-1]].apply("_".join, axis = 1)
-            df["category_behavior"] = df[columns[-1]]
-
-            data_fsct_models = pd.concat([data_fsct_models, df[["label", "category_behavior"]]], axis = 1)
-            data_fsct_models.drop("segment", axis = 1, inplace = True)
-            """
             print(data_fsct_models.head())
+            data_fsct_models.to_csv("/home/baroal/Documentos/softtek/demanda_pronostico/source/predicts.csv", index = False)
             print("\n > Volumen: ", data_fsct_models.shape)
             print("---"*20)
 

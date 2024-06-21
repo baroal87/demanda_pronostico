@@ -1205,10 +1205,12 @@ class Functions():
         if period == "month":
             days = 30 * size_period
             start_date = end_date + relativedelta(days = -days)
+            data['month'] = data[col_serie[0]].dt.month
 
         elif period == "week":
             days = 7 * size_period
             start_date = end_date + relativedelta(days = -days)
+            data_serie['week'] = data_serie[col_serie[0]].dt.isocalendar().week        
 
         elif period == "daily":
             days = size_period

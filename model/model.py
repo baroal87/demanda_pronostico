@@ -51,7 +51,7 @@ import bottleneck as bn
 #from tqdm.autonotebook import tqdm
 
 #from numba import jit, cuda
-#import torch
+import torch
 
 class Model_Series_Times():
 
@@ -173,9 +173,9 @@ class Model_Series_Times():
 
         preprocessor = ColumnTransformer(transformers = [('num', numeric_transformer, numeric_features), ('cat', categorical_transformer, categorical_features)])
 
-        #use_cuda = torch.cuda.is_available()
-        #device = torch.device("cuda" if use_cuda else "cpu")
-        #print("\n >> Device: {}\n".format(device))
+        use_cuda = torch.cuda.is_available()
+        device = torch.device("cuda" if use_cuda else "cpu")
+        print("\n >> Device: {}\n".format(device))
 
         # Busqueda de hyperparametros mediante modelo LGBM
         if type_model == "LGBM":
@@ -195,8 +195,8 @@ class Model_Series_Times():
                         #"force_col_wise": [True],
                         "verbose": [-1]}
 
-            #if str(device) == "cuda":
-            #    params['device'] = ['gpu']
+            if str(device) == "cuda":
+                params['device'] = ['gpu']
 
             lgbm = LGBMRegressor()
             #grid_ = GridSearchCV(lgbm, params, scoring = 'neg_mean_squared_error', cv = 5)
@@ -225,8 +225,8 @@ class Model_Series_Times():
                     #"thread_count": [6], #10
                     "logging_level": ["Silent"]}
 
-            #if str(device) == "cuda":
-            #    params['task_type'] = ['GPU']
+            if str(device) == "cuda":
+                params['task_type'] = ['GPU']
             
             cat = CatBoostRegressor()
             #rsf = RepeatedStratifiedKFold(random_state = 6)
@@ -297,20 +297,20 @@ class Model_Series_Times():
         start_date = data[columns[2]].max()
         data_serie = self.validate_data_serie_models(start_date, period, size_period)
         data_serie.rename(columns = {"date": columns[2]}, inplace = True)
-        data_serie[columns[2]] = pd.to_datetime(data[columns[2]])
+        data_serie[columns[2]] = pd.to_datetime(data_serie[columns[2]])
         data_serie[segment[0]] = label[0]
 
         if period == "month":
             #days = 30 * size_period
             end_date = start_date + relativedelta(days = -30)
-            data_serie['month'] = data[columns[2]].dt.month
+            data_serie['month'] = data_serie[columns[2]].dt.month
 
         elif period == "week":
             #days = 7 * size_period
             end_date = start_date + relativedelta(days = -15)
-            data_serie['week'] = data[columns[2]].dt.isocalendar().week        
+            data_serie['week'] = data_serie[columns[2]].dt.isocalendar().week
 
-        data_serie['year'] = data[columns[2]].dt.year
+        data_serie['year'] = data_serie[columns[2]].dt.year
         price = data[data[columns[2]] >= end_date][columns[-1]].mean()
         data_serie[columns[-1]] = round(price, 2)
         data_serie.drop(columns[2], axis = 1, inplace = True)
@@ -319,11 +319,14 @@ class Model_Series_Times():
         pred = model.predict(data_serie)        
         data_serie["fsct"] = pred.tolist()
         data_serie["fsct"] = data_serie["fsct"].round(2)
-        #print(data_serie.head())
-        #print("---"*30)
+
+        fsct = data_serie["fsct"].values.tolist()
+        if len(fsct) > size_period:
+            fsct = fsct[-size_period:]
 
         #data_fsct = self.get_data_fsct_model(data_serie[name_col_pred].values.tolist(), size_period, period, data.segment.unique().tolist()[0], "Arima")
-        data_fsct = self.get_data_fsct_model(data_serie["fsct"].values.tolist(), size_period, period, data[columns[0]].unique().tolist()[0], data[columns[1]].unique().tolist()[0], name_model)
+        data_fsct = self.get_data_fsct_model(fsct, size_period, period, data[columns[0]].unique().tolist()[0], data[columns[1]].unique().tolist()[0], name_model)
+        #sys.exit()
 
         return data_fsct
     
@@ -529,7 +532,7 @@ class Model_Series_Times():
         # diff_days -> El fsct debe contemplarse apartir de la ultima fecha del train_set (Se suman las fechas del test y las predicciones a futuro)
         diff_days = (data_serie[col_serie[0]].max() - test[col_serie[0]].min()).days
         future_data = model.make_future_dataframe(periods = diff_days, freq = 'D')
-        print(future_data.tail())
+        #print(future_data.tail())
         forecast = model.predict(future_data)
         forecast.rename(columns = {"ds": col_serie[0], "yhat": name_col_pred}, inplace = True)
         data_serie = pd.merge(data_serie, forecast[[col_serie[0], name_col_pred]], how = "left", on = [col_serie[0]])
@@ -542,9 +545,7 @@ class Model_Series_Times():
 
         data_serie[name_col_pred] = data_serie[name_col_pred].round(2)
         data_serie[name_col_pred] = data_serie[name_col_pred].abs()
-        print(data_serie.head())
-        print("---"*30)
-        
+
         columns = data.columns.tolist()[:2]
         #data_fsct = self.get_data_fsct_model(data_serie[name_col_pred].values.tolist(), size_period, period, data.segment.unique().tolist()[0], "Prophet")
         data_fsct = self.get_data_fsct_model(data_serie[name_col_pred].values.tolist(), size_period, period, data[columns[0]].unique().tolist()[0], data[columns[1]].unique().tolist()[0], "Prophet")
@@ -907,12 +908,17 @@ class Model_Series_Times():
         data_serie = self.validate_data_serie_models(data["ds"].max(), period, size_period)
         data_serie.rename(columns = {"date": "ds"}, inplace = True)
         data_serie["unique_id"] = data.segment.unique().tolist()[0]
-        #diff_days = (data_serie["ds"].max() - data_serie["ds"].min()).days
-        horizon = len(test) + len(data_serie)
-        forecasts = sf.forecast(h = horizon, fitted = True)
+        diff_days = (data_serie["ds"].max() - test["ds"].min()).days
+        #horizon = len(test) + len(data_serie)
+        forecasts = sf.forecast(h = diff_days, fitted = True)
+        print(forecasts.tail())
+        print("--------------------------")
+        print(data_serie.head())
+        print("--------------------------")
 
         data_serie = pd.merge(data_serie, forecasts, how = "left", on = ["unique_id", "ds"])
         data_serie = data_serie.dropna().reset_index(drop = True)
+        print(data_serie)
         
         columns = data.columns.tolist()[:2]
         for col in col_pred:
@@ -1148,14 +1154,16 @@ class Model_Series_Times():
         data = data.dropna().reset_index(drop = True)
         data = data.sort_values([col_serie[0]], ascending = True).reset_index(drop = True)
         data_serie = function.validate_data_serie_ma(data, col_serie, period, size_period)
-
+        data_serie[period] = data_serie[period].astype(int)
+        temp1 = data_serie.copy()
+ 
         data_serie = data_serie[col_serie].set_index([col_serie[0]])
         data_ma = self.get_ma(data_serie[col_serie[1]].values.tolist())
         #print(data_ma)
         #limit = int(len(data_serie) / size_period)
         limit = int(math.ceil(len(data_serie) / size_period))
         columns = data.columns.tolist()[:2]
-
+ 
         df = pd.DataFrame()
         for key, fsct in data_ma.items():
             fsct = [fsct[i: i + limit] for i in range(0, len(fsct), limit)]
@@ -1167,10 +1175,42 @@ class Model_Series_Times():
             for idx, value in enumerate(fsct):
                 name_col = "ma_per_" + period + "_" + str(idx + 1)
                 temp[name_col] = round(sum(value), 2)
-
+ 
             df = pd.concat([temp, df], axis = 0, ignore_index = False)
-
+ 
+        #df.reset_index(drop = True, inplace = True)
+        sales = []
+        end_date = temp1[col_serie[0]].min()
+        for _ in range(size_period):
+            if period == "month":
+                start_date =  end_date + relativedelta(days = 30)
+                sales.append(round(temp1[(temp1[col_serie[0]] >= end_date) & (temp1[col_serie[0]] < start_date)][col_serie[1]].sum(), 2))
+                end_date = start_date
+               
+            else:
+                start_date =  end_date + relativedelta(days = 7)
+                sales.append(round(temp1[(temp1[col_serie[0]] >= end_date) & (temp1[col_serie[0]] < start_date)][col_serie[1]].sum(), 2))
+                end_date = start_date
+       
+        fsct = []
+        while True:
+            r = round(sum(sales[len(fsct):]) / size_period, 2)
+            sales.append(r)
+            fsct.append(r)
+            if size_period <= len(fsct):
+                break
+       
+        temp = pd.DataFrame()
+        temp["label"] = data[columns[0]].unique().tolist()
+        temp["category_behavior"] = data[columns[1]].unique().tolist()
+        temp["type_model"] = "MA"
+        for idx, value in enumerate(fsct):
+            name_col = "ma_per_" + period + "_" + str(idx + 1)
+            temp[name_col] = value
+       
+        df = pd.concat([temp, df], axis = 0, ignore_index = False)
         df.reset_index(drop = True, inplace = True)
+ 
         return df
     
     # Modulo: Generacion del intervalo de fechas forecast
