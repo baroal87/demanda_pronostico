@@ -764,10 +764,10 @@ class Main_Demand_Series_Times():
             print("\n > Volumen: ", data_final.shape)
             print("---"*20)
 
-            #print("\n >>> Dataframe: Estacionalidades <<< \n")
-            #data_comp_seasonal = self.plot_graph_series(data.copy(), data_final.copy(), col_gran.copy(), col_serie, name_file, period)
-            #print(data_comp_seasonal.head())
-            #print("\n", "###"*30)
+            print("\n >>> Dataframe: Estacionalidades <<< \n")
+            data_comp_seasonal = self.plot_graph_series(data.copy(), data_final.copy(), col_gran.copy(), col_serie, name_file, period)
+            print(data_comp_seasonal.head())
+            print("\n", "###"*30)
             
             ###########################################   ###########################################   ###########################################
             print("\n >> Proceso: Entrenamiento, validaciones y seleccion del mejor modelo <<<\n")
