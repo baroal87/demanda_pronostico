@@ -7,6 +7,7 @@ import math
 import sys
 from pandas import ExcelWriter
 from dateutil.relativedelta import relativedelta
+import matplotlib.pyplot as plt
 
 class Queries():
     
@@ -56,7 +57,7 @@ class Queries():
 
         return data
 
-    # Modulo:
+    # Modulo: Agrupamiento de datos para los modelos
     def get_grouped_data_model(self, data, col_gran, var_obs, type_model = 2):
         if type_model == 1:
             #data = data.groupby(col_gran[:-1]).agg(date = (col_gran[-1], 'min'), sales = (var_obs[1], 'sum')).reset_index()
@@ -98,7 +99,7 @@ class Queries():
             print(" >> Archivo Guardado correctamente")
 
     # Modulo: Guardado de un archivo excel
-    def save_data_file_excel(self, data_final, data_detail, detail_data_abc_xyz, data_metric, name_folder):
+    def save_data_file_excel(self, data_final, data_detail, detail_data_abc_xyz, detail_data_hml, data_metric, name_folder):
         if not self.test:
             print("\n >> Proceso de guardado (Archivo - Excel)")
             name_file = input("\n Ingrese el nombre del archivo: ")
@@ -118,6 +119,7 @@ class Queries():
                 data_final.to_excel(writer, sheet_name = 'data_final', index = False)
                 data_detail.to_excel(writer, sheet_name = 'demand_classifier_detail', index = False)
                 detail_data_abc_xyz.to_excel(writer, sheet_name = 'inventory_abc_xyz_detail', index = False)
+                detail_data_hml.to_excel(writer, sheet_name = 'hml_detail', index = False)
                 data_metric.to_excel(writer, sheet_name = 'metrics_models_detail', index = False)
 
                 #data_final_abc.total_revenue = data_final_abc.total_revenue.apply(lambda x: f"{x:,}".translate(self.miles_translator))
@@ -125,6 +127,41 @@ class Queries():
 
             print(" >> Archivo Guardado correctamente")
             print("---"*20)
+
+    # Modulo: uardado de graficas de estacionalidades
+    def save_graph_seasonal(self, graph, name_graph, name_file, col_gran, period, cat_xyz, functions):
+        # Plot the filtered data without outliers
+        if not self.test:
+            print("\n >> Proceso de guardado (Grafica)")
+            # Validacion de la carpeta principal
+            name_folder = "graphics/"
+            functions.validate_path(name_folder)
+
+            # Validacion de subcarpetas - nombre del archivo
+            name_folder = name_folder + name_file + "/"
+            functions.validate_path(name_folder)
+
+            # Validacion de subcarpetas - periodo analisis (Semanal o Mensual)
+            name_folder = name_folder + period + "/"
+            functions.validate_path(name_folder)
+
+            # Validacion de subcarpetas - columna (variable de granuralidad)
+            name_folder = name_folder + col_gran + "/"
+            functions.validate_path(name_folder)
+
+            # Validacion de subcarpetas - columna (variable categoria ABC - HML)
+            name_folder = name_folder + "AH/"
+            functions.validate_path(name_folder)
+
+            # Validacion de subcarpetas - columna (variable categoria XYZ)
+            name_folder = name_folder + cat_xyz + "/"
+            functions.validate_path(name_folder)
+
+            # Definicion del nombre de la grafica
+            #graph.savefig(self.path + name_folder + name_graph + '.png', dpi = 400, bbox_inches = 'tight')
+            #graph.close()
+            #plt.show()
+            graph.plot().savefig(self.path + name_folder + name_graph + '.png', dpi = 500)
 
     # Modulo: Determinacion del nombre y guardado del dataframe resultante (BD)
     def save_data_bd(self, data):

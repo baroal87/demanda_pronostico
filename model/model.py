@@ -3,56 +3,55 @@
 
 import pandas as pd
 import numpy as np
+#np.bool = np.bool_
+from math import log, exp, sqrt
+from dateutil.relativedelta import relativedelta
+import math
+import sys
 
-from prophet import Prophet
-
-from sklearn.metrics import r2_score
-from sklearn.preprocessing import StandardScaler, OneHotEncoder, LabelEncoder, OrdinalEncoder
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
-from sklearn.model_selection import RandomizedSearchCV, GridSearchCV, train_test_split, RepeatedStratifiedKFold
-from feature_engine.selection import (DropFeatures, DropConstantFeatures, DropDuplicateFeatures, DropCorrelatedFeatures, 
-                                      SmartCorrelatedSelection, SelectByShuffling, SelectBySingleFeaturePerformance, 
-                                      RecursiveFeatureElimination)
-
-import matplotlib.pyplot as plt
-import plotly.express as px
-import seaborn as sns
-import plotly.graph_objects as go
-import missingno as ms
-
+#### Modelos ####
 from lightgbm import LGBMRegressor
 from catboost import CatBoostRegressor
 from prophet import Prophet
 from pmdarima import auto_arima
 from statsmodels.tsa.arima.model import ARIMA
 from sklearn.tree import DecisionTreeRegressor
-from sklearn.ensemble import RandomForestRegressor  
-
-from sklearn.metrics import mean_absolute_percentage_error, mean_squared_error, mean_absolute_error
-from scipy.stats import boxcox
-from scipy.special import inv_boxcox
-
-from math import log, exp, sqrt
-
-from dateutil.relativedelta import relativedelta
-
-#from pyInterDemand.algorithm.intermittent import plot_int_demand, classification, mase, rmse
-#from pyInterDemand.algorithm.intermittent import croston_method
-
+from sklearn.ensemble import RandomForestRegressor
 from statsforecast import StatsForecast
 from statsforecast.models import CrostonClassic, ADIDA, IMAPA, CrostonSBA, TSB, AutoARIMA, CrostonOptimized
-from datasetsforecast.losses import rmse
 
 import skforecast
 from skforecast.ForecasterAutoreg import ForecasterAutoreg
 from skforecast.model_selection import grid_search_forecaster
 from skforecast.model_selection import backtesting_forecaster
 
-from statsmodels.tsa.seasonal import seasonal_decompose
+#### Metricas ####
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, LabelEncoder, OrdinalEncoder, MinMaxScaler, PowerTransformer
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import RandomizedSearchCV, GridSearchCV, train_test_split
+from feature_engine.selection import (DropFeatures, DropConstantFeatures, DropDuplicateFeatures, DropCorrelatedFeatures, 
+                                      SmartCorrelatedSelection, SelectByShuffling, SelectBySingleFeaturePerformance, 
+                                      RecursiveFeatureElimination)
+from sklearn.metrics import mean_absolute_percentage_error, mean_squared_error, mean_absolute_error, r2_score
+from scipy.stats import boxcox
+from scipy.special import inv_boxcox
+
+from sklearn.model_selection import ParameterGrid
+from scipy.stats import uniform
+
+from mango import scheduler, Tuner
+import bottleneck as bn
+
+#from gluonts.dataset.common import ListDataset
+#from gluonts.torch.model.deepar import DeepAREstimator
+#from gluonts.mx.model.deepar import DeepAREstimator
+#from gluonts.mx.trainer import Trainer
+#from gluonts.evaluation.backtest import make_evaluation_predictions
+#from tqdm.autonotebook import tqdm
 
 #from numba import jit, cuda
-#import torch
+import torch
 
 class Model_Series_Times():
 
@@ -65,6 +64,8 @@ class Model_Series_Times():
         self.OneHot = OneHotEncoder(handle_unknown = 'ignore')
         self.encoder = OrdinalEncoder()
         self.labelencoder = LabelEncoder()
+        self.minMaxScaler = MinMaxScaler()
+        self.powerTransf = PowerTransformer(method='box-cox', standardize=False)
 
     # Modulo:
     def get_metrics_pred(self, X_test, name_col_real, name_col_pred):
@@ -172,9 +173,9 @@ class Model_Series_Times():
 
         preprocessor = ColumnTransformer(transformers = [('num', numeric_transformer, numeric_features), ('cat', categorical_transformer, categorical_features)])
 
-        #use_cuda = torch.cuda.is_available()
-        #device = torch.device("cuda" if use_cuda else "cpu")
-        #print("\n >> Device: {}\n".format(device))
+        use_cuda = torch.cuda.is_available()
+        device = torch.device("cuda" if use_cuda else "cpu")
+        print("\n >> Device: {}\n".format(device))
 
         # Busqueda de hyperparametros mediante modelo LGBM
         if type_model == "LGBM":
@@ -194,8 +195,8 @@ class Model_Series_Times():
                         #"force_col_wise": [True],
                         "verbose": [-1]}
 
-            #if str(device) == "cuda":
-            #    params['device'] = ['gpu']
+            if str(device) == "cuda":
+                params['device'] = ['gpu']
 
             lgbm = LGBMRegressor()
             #grid_ = GridSearchCV(lgbm, params, scoring = 'neg_mean_squared_error', cv = 5)
@@ -224,8 +225,8 @@ class Model_Series_Times():
                     #"thread_count": [6], #10
                     "logging_level": ["Silent"]}
 
-            #if str(device) == "cuda":
-            #    params['task_type'] = ['GPU']
+            if str(device) == "cuda":
+                params['task_type'] = ['GPU']
             
             cat = CatBoostRegressor()
             #rsf = RepeatedStratifiedKFold(random_state = 6)
@@ -240,7 +241,6 @@ class Model_Series_Times():
 
         return best_params, preprocessor
 
-    #@jit(target_backend='cuda', nopython=True)
     # Modulo: Modelo (Light Gradient-Boosting Machine - LGBM) para la prediccion de forecast
     def get_model_LGBM(self, data, columns_num, columns_cat, col_pred):
         column = columns_cat + columns_num
@@ -284,9 +284,52 @@ class Model_Series_Times():
         data_metric["acc"] = [acc]
         data_metric["r2"] = [round(coef_det, 2)]
 
-        return data_metric
+        return data_metric, train_model
     
-    #@jit(target_backend='cuda', nopython=True)
+    def get_fsct_trees(self, data, dict_seg, model, period, size_period, name_model):
+        # Proceso: Generacion de fsct en base a intevarlo de periodos determinados
+        columns = data.columns.tolist()
+        #print(columns)
+        segment = list(dict_seg.keys())
+        label = dict_seg[segment[0]]
+        behavior = dict_seg[segment[1]]
+        data = data[(data[columns[0]].isin(label)) & (data[columns[1]].isin(behavior))]
+        start_date = data[columns[2]].max()
+        data_serie = self.validate_data_serie_models(start_date, period, size_period)
+        data_serie.rename(columns = {"date": columns[2]}, inplace = True)
+        data_serie[columns[2]] = pd.to_datetime(data_serie[columns[2]])
+        data_serie[segment[0]] = label[0]
+
+        if period == "month":
+            #days = 30 * size_period
+            end_date = start_date + relativedelta(days = -30)
+            data_serie['month'] = data_serie[columns[2]].dt.month
+
+        elif period == "week":
+            #days = 7 * size_period
+            end_date = start_date + relativedelta(days = -15)
+            data_serie['week'] = data_serie[columns[2]].dt.isocalendar().week
+
+        data_serie['year'] = data_serie[columns[2]].dt.year
+        price = data[data[columns[2]] >= end_date][columns[-1]].mean()
+        data_serie[columns[-1]] = round(price, 2)
+        data_serie.drop(columns[2], axis = 1, inplace = True)
+        data_serie = data_serie.drop_duplicates()
+
+        pred = model.predict(data_serie)        
+        data_serie["fsct"] = pred.tolist()
+        data_serie["fsct"] = data_serie["fsct"].round(2)
+
+        fsct = data_serie["fsct"].values.tolist()
+        if len(fsct) > size_period:
+            fsct = fsct[-size_period:]
+
+        #data_fsct = self.get_data_fsct_model(data_serie[name_col_pred].values.tolist(), size_period, period, data.segment.unique().tolist()[0], "Arima")
+        data_fsct = self.get_data_fsct_model(fsct, size_period, period, data[columns[0]].unique().tolist()[0], data[columns[1]].unique().tolist()[0], name_model)
+        #sys.exit()
+
+        return data_fsct
+    
     # Modulo: Modelo Catboost
     def get_model_CatBoost(self, data, columns_num, columns_cat, col_pred):
         # Concatenacion de las valriables para las filtraciones del historico
@@ -336,79 +379,143 @@ class Model_Series_Times():
         data_metric["acc"] = [acc]
         data_metric["r2"] = [round(coef_det, 2)]
 
-        return data_metric
+        return data_metric, train_model
 
-    #@jit(target_backend='cuda', nopython=True)
+    def parameter_prophet(self):
+        params_grid = dict(#growth = ['linear', 'logistic', 'flat'],
+                           growth = ['linear', 'flat'],
+                            n_changepoints  = [100, 200, 300, 400],
+                            changepoint_range  = uniform(0.2, 0.8).rvs(5),
+                            #yearly_seasonality = [True, False],
+                            #weekly_seasonality = [True, False],
+                            daily_seasonality = [True, False],
+                            seasonality_mode = ['additive', 'multiplicative'],
+                            seasonality_prior_scale = uniform(5.0, 15.0).rvs(5),
+                            changepoint_prior_scale = uniform(0.0, 0.1).rvs(5),
+                            interval_width = uniform(0.2, 0.8).rvs(5),
+                            uncertainty_samples = [500, 1000, 1500, 2000])
+
+        grid = ParameterGrid(params_grid)
+        cnt = 0
+        for p in grid:
+            cnt += 1
+        print(' >> Total Models: ', cnt)
+        
+        return params_grid
+
+    # Modulo:
+    def get_hyperparameters_prophet(self, params_grid):
+        params_evaluated = []
+        results = []
+        for params in params_grid:
+            try:
+                global train, test
+                model = Prophet(**params)
+                model.fit(train[["fecha", "sales_scaled"]].rename(columns = {"fecha": "ds", "sales_scaled": "y"}))
+                diff_days = (test["fecha"].max() - test["fecha"].min()).days
+                future = model.make_future_dataframe(periods = diff_days, freq = 'D')
+                future_data['cap'] = 6
+                forecast = model.predict(future)
+                future_data = forecast.tail(diff_days)
+
+                #error = mape(test['sales'], future_data['yhat'])
+                error = mean_absolute_percentage_error(test['sales'], future_data['yhat'])
+                params_evaluated.append(params)
+                results.append(error)
+
+            except:
+                params_evaluated.append(params)
+                results.append(25.0)# Giving high loss for exceptions regions of spaces
+
+        return params_evaluated, results
+
     # Modulo: Modelo Prophet
-    def get_model_prophet(self, data, col_serie):
+    def get_model_prophet(self, data, col_serie, period, size_period):
+        # Computo del indicador de filtracion
         data = data.dropna().reset_index(drop = True)
         total_data = len(data)
         fill_data = int(round((total_data * 20) / 100))
-        #print(fill_data)
 
-        #date_max = data[col_serie[0]].max()
-        #date_min = data[col_serie[0]].min()
-        #dif = date_max - date_min
-
-        #days = int((dif.days * 20) / 100)
-        #start_date = date_max + relativedelta(days = -days)
-        #print(start_date)
-
-        #train = data[data["date"] <= start_date]
-        #test = data[data["date"] > start_date]
+        # Particionamiento del conjunto de entrenamiento y prueba
         train = data.loc[:fill_data]
+        train["cap"] = 6
+        test = data.loc[fill_data:]
+        test = test[[col_serie[0], col_serie[1]]]
+
+        # Proceso de transformacion y estandarizacion de los datos
         name_col_transf = col_serie[1] + "_scaled"
         transformed, lam = boxcox(train[col_serie[1]])
         flag_boxcox = False
         if lam < -5:
             train[name_col_transf], lam = boxcox(train[col_serie[1]])
-            #train[name_col_transf] = self.scaler.fit_transform(train[name_col_transf])
             flag_boxcox = True
 
         else:
-            train[name_col_transf] = self.scaler.fit_transform(train[[col_serie[1]]])
+            #train[name_col_transf] = self.scaler.fit_transform(train[[col_serie[1]]])
+            train[name_col_transf] = self.minMaxScaler.fit_transform(train[[col_serie[1]]])
+            #train[name_col_transf] = self.powerTransf.fit_transform(train[[col_serie[1]]])
+            
+        conf_Dict = dict()
+        conf_Dict['initial_random'] = 10
+        conf_Dict['num_iteration'] = 50
 
-        #train = train[[col_serie[0], name_col_transf]].set_index([col_serie[0]])
-
-        test = data.loc[fill_data:]
-        test = test[[col_serie[0], col_serie[1]]]
-        #test[name_col_transf] = self.scaler.fit_transform(test[[col_serie[1]]])
+        params_grid = self.parameter_prophet()
+        tuner = Tuner(params_grid, self.get_hyperparameters_prophet, conf_Dict)
+        results = tuner.minimize()
+        params = results['best_params']
+        print(' >> Seleccion del mejor parametro: ', params)
+        print(' >> Mejor error: ', results['best_objective'])
 
         # seasonality_mode = 'multiplicative', daily_seasonality = True, weekly_seasonality = True
-        model_fbp = Prophet()
-        #model_fbp.add_seasonality('daily', period = 1, fourier_order = 3)
-        #model_fbp.add_regressor('regressor', mode = 'additive')
-        #model_fbp.fit(train[[col_serie[0], col_serie[1]]].rename(columns = {col_serie[0]: "ds", col_serie[1]: "y"}))
-        #forecast = model_fbp.predict(test[[col_serie[0], col_serie[1]]].rename(columns = {col_serie[0]: "ds"}))
+        #model = Prophet(seasonality_mode = type_seasonal)
+        model = Prophet(**params)
+        if params["growth"] == "logistic":
+            model.fit(train[[col_serie[0], name_col_transf, "cap"]].rename(columns = {col_serie[0]: "ds", name_col_transf: "y"}))
 
-        model_fbp.fit(train[[col_serie[0], name_col_transf]].rename(columns = {col_serie[0]: "ds", name_col_transf: "y"}))
+        else:
+            model.fit(train[[col_serie[0], name_col_transf]].rename(columns = {col_serie[0]: "ds", name_col_transf: "y"}))
+
         #forecast = model_fbp.predict(test[[col_serie[0], name_col_transf]].rename(columns = {col_serie[0]: "ds"}))
-        forecast = model_fbp.predict(test[[col_serie[0], col_serie[1]]].rename(columns = {col_serie[0]: "ds"}))
-        #future_data = model_fbp.make_future_dataframe(periods = len(test))
-        #forecast = model_fbp.predict(future_data)
-        #print(len(test))
+        #forecast = model_fbp.predict(test[[col_serie[0], col_serie[1]]].rename(columns = {col_serie[0]: "ds"}))
+        diff_days = (test[col_serie[0]].max() - test[col_serie[0]].min()).days
+        future_data = model.make_future_dataframe(periods = diff_days, freq = 'D')
+        if params["growth"] == "logistic":
+            future_data['cap'] = 6
+
+        forecast = model.predict(future_data)
 
         name_col_real = col_serie[1] + "_real"
         name_col_pred = col_serie[1] + "_pred"
-        test[name_col_pred] = forecast.yhat.values
+        #name_col_pred = col_serie[1]
+        #test[name_col_pred] = forecast.yhat.values
+        forecast.rename(columns = {"ds": col_serie[0], "yhat": name_col_pred}, inplace = True)
+        test = pd.merge(test, forecast[[col_serie[0], name_col_pred]], how = "left", on = [col_serie[0]])
 
+        # Proceso de transformacion inversa
         if flag_boxcox:
             test[name_col_pred] = inv_boxcox(test[name_col_pred], lam)
 
         else:
-            test[name_col_pred] = self.scaler.inverse_transform(test[[name_col_pred]])
+            #test[name_col_pred] = self.scaler.inverse_transform(test[[name_col_pred]])
+            test[name_col_pred] = self.minMaxScaler.inverse_transform(test[[name_col_pred]])
+            #test[name_col_pred] = self.powerTransf.inverse_transform(test[name_col_pred])
 
         test[name_col_pred] = test[name_col_pred].round(2)
         test.rename(columns = {col_serie[1]: name_col_real}, inplace = True)
         
+        # Proceso de evaluacionn y computo de metricas
         test["accuracy"] = self.forecast_accuracy(test[name_col_real], test[name_col_pred])
         test.loc[test["accuracy"].isnull(), "accuracy"] = 0
         test["accuracy"] = test["accuracy"].round(2)
+        #print(test.isnull().sum())
         mae, rmse, mape, acc = self.get_metrics_pred(test, name_col_real, name_col_pred)
         
         coef_det = r2_score(test[name_col_real], test[name_col_pred], multioutput = 'variance_weighted')
         if coef_det < 0:
             coef_det = abs(coef_det)
+            
+        elif coef_det > 1:
+            coef_det = 0
 
         data_metric = pd.DataFrame()
         data_metric["mae"] = [mae]
@@ -418,15 +525,35 @@ class Model_Series_Times():
         data_metric["r2"] = [round(coef_det, 2)]
         #print(test.head(20))
 
-        return data_metric
+        # Proceso: Generacion de fsct en base a intevarlo de periodos determinados
+        data_serie = self.validate_data_serie_models(data[col_serie[0]].max(), period, size_period)
+        data_serie.rename(columns = {"date": col_serie[0]}, inplace = True)
+        
+        # diff_days -> El fsct debe contemplarse apartir de la ultima fecha del train_set (Se suman las fechas del test y las predicciones a futuro)
+        diff_days = (data_serie[col_serie[0]].max() - test[col_serie[0]].min()).days
+        future_data = model.make_future_dataframe(periods = diff_days, freq = 'D')
+        #print(future_data.tail())
+        forecast = model.predict(future_data)
+        forecast.rename(columns = {"ds": col_serie[0], "yhat": name_col_pred}, inplace = True)
+        data_serie = pd.merge(data_serie, forecast[[col_serie[0], name_col_pred]], how = "left", on = [col_serie[0]])
+        
+        if flag_boxcox:
+            data_serie[name_col_pred] = inv_boxcox(data_serie[name_col_pred], lam)
 
-    # Modulo: invert box-cox transform
-    def boxcox_inverse(self, value, lam):
-        if lam == 0:
-            return exp(value)
+        else:
+            data_serie[name_col_pred] = self.minMaxScaler.inverse_transform(data_serie[[name_col_pred]])
 
-        return exp(log(lam * value + 1) / lam)
-    
+        data_serie[name_col_pred] = data_serie[name_col_pred].round(2)
+        data_serie[name_col_pred] = data_serie[name_col_pred].abs()
+
+        columns = data.columns.tolist()[:2]
+        #data_fsct = self.get_data_fsct_model(data_serie[name_col_pred].values.tolist(), size_period, period, data.segment.unique().tolist()[0], "Prophet")
+        data_fsct = self.get_data_fsct_model(data_serie[name_col_pred].values.tolist(), size_period, period, data[columns[0]].unique().tolist()[0], data[columns[1]].unique().tolist()[0], "Prophet")
+        #print(data_fsct)
+        #print("---"*30)
+
+        return data_metric, data_fsct
+
     # Modulo: Evaluacion del modelo ARIMA para un orden dado (p,d,q) y devolver RMSE
     def evaluate_arima_model(self, X, arima_order):
         X = X.astype('float32')
@@ -475,7 +602,7 @@ class Model_Series_Times():
         return best_cfg
 
     # Modulo: Modelo Auto Arima
-    def get_model_Arima(self, data, col_serie):
+    def get_model_Arima(self, data, col_serie, period, size_period):
         data = data.dropna().reset_index(drop = True)
         total_data = len(data)
         fill_data = int(round((total_data * 20) / 100))
@@ -546,8 +673,31 @@ class Model_Series_Times():
         data_metric["acc"] = [acc]
         data_metric["r2"] = [round(coef_det, 2)]
         #print(test.head(20))
+        
+        # Proceso: Generacion de fsct en base a intevarlo de periodos determinados
+        data_serie = self.validate_data_serie_models(data[col_serie[0]].max(), period, size_period)
+        data_serie.rename(columns = {"date": col_serie[0]}, inplace = True)
+        #diff_days = (data_serie[col_serie[0]].max() - data_serie[col_serie[0]].min()).days
+        pred = model_arima.forecast(len(data_serie))
+        
+        #data_serie = pd.merge(data_serie, forecast[[col_serie[0], name_col_pred]], how = "left", on = [col_serie[0]])
+        data_serie[name_col_pred] = pred.tolist()
 
-        return data_metric
+        if flag_boxcox:
+            data_serie[name_col_pred] = inv_boxcox(data_serie[name_col_pred], lam)
+
+        else:
+            data_serie[name_col_pred] = self.scaler.inverse_transform(data_serie[[name_col_pred]])
+
+        data_serie[name_col_pred] = data_serie[name_col_pred].round(2)
+        #print(data_serie.head())
+        #print("---"*30)
+        
+        columns = data.columns.tolist()[:2]
+        #data_fsct = self.get_data_fsct_model(data_serie[name_col_pred].values.tolist(), size_period, period, data.segment.unique().tolist()[0], "Arima")
+        data_fsct = self.get_data_fsct_model(data_serie[name_col_pred].values.tolist(), size_period, period, data[columns[0]].unique().tolist()[0], data[columns[1]].unique().tolist()[0], "Arima")
+
+        return data_metric, data_fsct
 
     # Modulo: Modelo Auto Arima
     def get_model_autoarima(self, data, col_serie):
@@ -646,7 +796,7 @@ class Model_Series_Times():
         return data_metric
 
     # Modulo:
-    def get_models_statsForecast(self, data, var_obs):
+    def get_models_statsForecast(self, data, var_obs, period, size_period):
         data = data.dropna().reset_index(drop = True)
         name_col_transf = var_obs[1] + "_scaled"
         transformed, lam = boxcox(data[var_obs[1]])
@@ -712,6 +862,7 @@ class Model_Series_Times():
         #print("*"*30)
         
         data_metric = pd.DataFrame()
+        data_fsct = pd.DataFrame()
         size_model = len(models)
         col_pred = test.columns.tolist()[-size_model:]
         #print(col_pred)
@@ -737,6 +888,9 @@ class Model_Series_Times():
             if coef_det < 0:
                 coef_det = abs(coef_det)
 
+            elif coef_det > 1:
+                coef_det = 0
+
             temp = pd.DataFrame()
             temp["model"] = [col]
             temp["mae"] = [mae]
@@ -746,12 +900,136 @@ class Model_Series_Times():
             temp["r2"] = [round(coef_det, 2)]
         
             data_metric = pd.concat([data_metric, temp], axis = 0, ignore_index = False)
-
+            
         #print(test.head(20))
         #print("---"*30)
-        data_metric = data_metric.reset_index(drop = True)
 
-        return data_metric, col_pred
+        # Proceso: Generacion de fsct en base a intevarlo de periodos determinados
+        data_serie = self.validate_data_serie_models(data["ds"].max(), period, size_period)
+        data_serie.rename(columns = {"date": "ds"}, inplace = True)
+        data_serie["unique_id"] = data.segment.unique().tolist()[0]
+        diff_days = (data_serie["ds"].max() - test["ds"].min()).days
+        #horizon = len(test) + len(data_serie)
+        forecasts = sf.forecast(h = diff_days, fitted = True)
+        print(forecasts.tail())
+        print("--------------------------")
+        print(data_serie.head())
+        print("--------------------------")
+
+        data_serie = pd.merge(data_serie, forecasts, how = "left", on = ["unique_id", "ds"])
+        data_serie = data_serie.dropna().reset_index(drop = True)
+        print(data_serie)
+        
+        columns = data.columns.tolist()[:2]
+        for col in col_pred:
+            if flag_boxcox:
+                data_serie[col] = inv_boxcox(data_serie[col], lam)
+
+            else:
+                data_serie[col] = self.scaler.inverse_transform(data_serie[[col]])
+
+            data_serie[col] = data_serie[col].astype(float)
+            data_serie[col] = data_serie[col].abs()
+            data_serie[col] = data_serie[col].round(2)
+
+            temp = self.get_data_fsct_model(data_serie[col].values.tolist(), size_period, period, data[columns[0]].unique().tolist()[0], data[columns[1]].unique().tolist()[0], col)
+            data_fsct = pd.concat([data_fsct, temp], axis = 0, ignore_index = False)
+
+        data_metric = data_metric.reset_index(drop = True)
+        data_fsct = data_fsct.reset_index(drop = True)
+
+        return data_metric, col_pred, data_fsct
+
+    # Modulo:
+    def get_model_deepAR(self, data, col_serie):
+        data = data.dropna().reset_index(drop = True)
+        total_data = len(data)
+        fill_data = int(round((total_data * 20) / 100))
+        if fill_data > 90:
+            fill_data = 90
+
+        else:
+            fill_data = 10
+        #start = pd.Timestamp(min_date, freq="H")
+
+        train = data.loc[:fill_data]
+        train = train[[col_serie[0], col_serie[1]]].rename(columns = {col_serie[0]: "date", col_serie[1]: "y"})
+        min_date = train.date.min()
+        train_ds = ListDataset([{'target': train.y, 'start': min_date}], freq = 'D')
+
+        test = data.loc[fill_data:]
+        test = test[[col_serie[0], col_serie[1]]].rename(columns = {col_serie[0]: "date", col_serie[1]: "y"})
+        min_date = test.date.min()
+        test_ds = ListDataset([{'target': test.y, 'start': min_date}], freq = 'D')
+
+        """
+        model = DeepAREstimator(prediction_length = 28,
+                                context_length = 100,
+                                freq = "D",
+                                trainer = Trainer(#ctx="gpu", # remove if running on windows
+                                                epochs = 50,
+                                                learning_rate = 1e-3,
+                                                num_batches_per_epoch = 100)
+                                )
+        #"""
+        
+        model = DeepAREstimator(freq = 'D', 
+                                prediction_length = fill_data,
+                                context_length = fill_data,
+                                num_layers = 4, 
+                                lr = 1e-3,
+                                trainer_kwargs = {"devices": "auto",
+                                                'accelerator': 'gpu', 
+                                                'max_epochs': 100,
+                                                "strategy": "ddp"}
+                                )
+
+        predictor = model.train(train_ds)
+        #predictions = predictor.predict(test_ds)
+        #predictions = list(predictions)[0]
+        #print(predictions)
+        #print("---"*30)
+
+        #predictions = predictions.quantile(0.5)
+        #print(predictions)
+        #print("---"*30)
+
+        forecasts = list(predictor.predict(test_ds))
+        print(forecasts)
+        print(min_date)
+        print(test.date.max())
+        print("---"*30)
+
+        forecast_it, ts_it = make_evaluation_predictions(dataset = test_ds,  # test dataset
+                                                        predictor = predictor,  # predictor
+                                                        num_samples = len(test),  # number of sample paths we want for evaluation
+                                                        )
+
+        forecasts_2 = list(forecast_it)
+        print(len(forecasts_2))
+        print(len(test))
+        tss = list(ts_it)
+        print(tss)
+        print("---"*30)
+        print(test_ds)
+        print("---"*30)
+
+        all_preds = list()
+        for item in forecasts_2:
+            #family = item.item_id
+            p = item.samples.mean(axis=0)
+            p10 = np.percentile(item.samples, 10, axis=0)
+            p90 = np.percentile(item.samples, 90, axis=0)
+            dates = pd.date_range(start = item.start_date.to_timestamp(), periods = len(p), freq ='D')
+            print(dates)
+            family_pred = pd.DataFrame({'date': dates, 'pred': p, 'p10': p10, 'p90': p90})
+            all_preds += [family_pred]
+        all_preds = pd.concat(all_preds, ignore_index=True)
+        all_preds = all_preds.merge(test, on = ['date'], how='left')
+        print(all_preds)
+
+
+        #print(r2_score( list(test_ds)[0]['target'][-28:], predictions))
 
     # Modulo:
     def get_model_forecasters(self, data, var_obs):
@@ -850,3 +1128,125 @@ class Model_Series_Times():
         test[name_col_pred] = test[name_col_pred].round(2)
         #test.rename(columns = {col_serie[1]: name_col_real}, inplace = True)
         print(test.head(10))
+
+    # Modulo: Modelo de Medias Moviles (MA)
+    def get_ma(self, values, win = 2):
+        ma = {}
+        #print(values)
+
+        # Cumsum - convolne
+        #cumsum = np.cumsum(np.insert(values, 0, 0)) 
+        #ma["ma_cumsum"] = (cumsum[values:] - cumsum[: - win]) / float (win)
+
+        # Convolne
+        ma["ma_convolne"] = np.convolve(values, np.ones(win), "valid") / win
+
+        # bottlneck
+        #ma["ma_bottlneck"] = bn.move_mean(values, window = win, min_count = None)
+
+        # Rolling
+        #ma["ma_rolling"] = pd.Series(values).rolling(window = win).mean().iloc[win - 1:].values
+
+        return ma
+
+    # Modulo: Generacion de medias moviles
+    def get_model_ma(self, data, col_serie, period, size_period, function):
+        data = data.dropna().reset_index(drop = True)
+        data = data.sort_values([col_serie[0]], ascending = True).reset_index(drop = True)
+        data_serie = function.validate_data_serie_ma(data, col_serie, period, size_period)
+        data_serie[period] = data_serie[period].astype(int)
+        temp1 = data_serie.copy()
+ 
+        data_serie = data_serie[col_serie].set_index([col_serie[0]])
+        data_ma = self.get_ma(data_serie[col_serie[1]].values.tolist())
+        #print(data_ma)
+        #limit = int(len(data_serie) / size_period)
+        limit = int(math.ceil(len(data_serie) / size_period))
+        columns = data.columns.tolist()[:2]
+ 
+        df = pd.DataFrame()
+        for key, fsct in data_ma.items():
+            fsct = [fsct[i: i + limit] for i in range(0, len(fsct), limit)]
+            temp = pd.DataFrame()
+            #temp["segment"] = data.segment.unique().tolist()
+            temp["label"] = data[columns[0]].unique().tolist()
+            temp["category_behavior"] = data[columns[1]].unique().tolist()
+            temp["type_model"] = [key]
+            for idx, value in enumerate(fsct):
+                name_col = "ma_per_" + period + "_" + str(idx + 1)
+                temp[name_col] = round(sum(value), 2)
+ 
+            df = pd.concat([temp, df], axis = 0, ignore_index = False)
+ 
+        #df.reset_index(drop = True, inplace = True)
+        sales = []
+        end_date = temp1[col_serie[0]].min()
+        for _ in range(size_period):
+            if period == "month":
+                start_date =  end_date + relativedelta(days = 30)
+                sales.append(round(temp1[(temp1[col_serie[0]] >= end_date) & (temp1[col_serie[0]] < start_date)][col_serie[1]].sum(), 2))
+                end_date = start_date
+               
+            else:
+                start_date =  end_date + relativedelta(days = 7)
+                sales.append(round(temp1[(temp1[col_serie[0]] >= end_date) & (temp1[col_serie[0]] < start_date)][col_serie[1]].sum(), 2))
+                end_date = start_date
+       
+        fsct = []
+        while True:
+            r = round(sum(sales[len(fsct):]) / size_period, 2)
+            sales.append(r)
+            fsct.append(r)
+            if size_period <= len(fsct):
+                break
+       
+        temp = pd.DataFrame()
+        temp["label"] = data[columns[0]].unique().tolist()
+        temp["category_behavior"] = data[columns[1]].unique().tolist()
+        temp["type_model"] = "MA"
+        for idx, value in enumerate(fsct):
+            name_col = "ma_per_" + period + "_" + str(idx + 1)
+            temp[name_col] = value
+       
+        df = pd.concat([temp, df], axis = 0, ignore_index = False)
+        df.reset_index(drop = True, inplace = True)
+ 
+        return df
+    
+    # Modulo: Generacion del intervalo de fechas forecast
+    def validate_data_serie_models(self, start_date, period, size_period):
+        if period == "month":
+            days = 30 * size_period
+            end_date = start_date + relativedelta(days = days)
+
+        elif period == "week":
+            days = 7 * size_period
+            end_date = start_date + relativedelta(days = days)
+
+        elif period == "daily":
+            days = size_period
+            end_date = start_date + relativedelta(days = days)
+
+        date_index = pd.date_range(start = start_date, end = end_date, freq = 'd')
+        return pd.DataFrame(date_index, columns = ['date'])
+    
+    # Modulo: Obtencion del fsct por cada modelo entrenado
+    #def get_data_fsct_model(self, fsct, size_period, period, name_segment, name_model):
+    def get_data_fsct_model(self, fsct, size_period, period, label, category_behavior, name_model):
+        limit = int(math.ceil(len(fsct) / size_period))
+
+        df = pd.DataFrame()
+        fsct = [fsct[i: i + limit] for i in range(0, len(fsct), limit)]
+        temp = pd.DataFrame()
+        #temp["segment"] = [name_segment]
+        temp["label"] = [label]
+        temp["category_behavior"] = category_behavior
+        temp["type_model"] = name_model
+        for idx, value in enumerate(fsct):
+            name_col = "model_per_" + period + "_" + str(idx + 1)
+            temp[name_col] = round(sum(value), 2)
+
+        df = pd.concat([temp, df], axis = 0, ignore_index = False)
+        df.reset_index(drop = True, inplace = True)
+
+        return df
