@@ -14,6 +14,10 @@ from dateutil.relativedelta import relativedelta
 from scipy import stats
 import matplotlib.pyplot as plt
 
+from statsmodels.tsa.seasonal import seasonal_decompose
+import statsmodels.api as sm
+from statsmodels.tsa.stattools import adfuller
+
 class Functions():
     
     # Modulo: Constructor
@@ -397,7 +401,8 @@ class Functions():
 
         # Validacion para identificar la demanda sea menor al periodo total
         adi_data["flag"] = np.where(adi_data.demand <= adi_data.period, 0, 1)
-        adi_data.loc[adi_data.flag == 1, "adi"] = 0
+        #adi_data.loc[adi_data.flag == 1, "adi"] = 0
+        adi_data.loc[adi_data.flag == 1, "demand"] = adi_data.period
         adi_data.drop("flag", axis = 1, inplace = True)
         #print(adi_data.head())
 
@@ -662,23 +667,31 @@ class Functions():
 
         # Computo del total de dias
         if period == "daily":
-            date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'D')
-            date.period = date.period.apply(lambda x: int(round(x, 0)))
+            #date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'D')
+            #date.period = date.period.apply(lambda x: int(round(x, 0)))
+            
+            date['period'] = (date['end'].dt.to_period('D').sub(date['start'].dt.to_period('D')).apply(lambda x: x.n))
+            date.period = date.period.apply(lambda x: math.ceil(x))
+            date.period = date.period + 1
 
         # Computo del total de meses
         elif period == "month":
-            date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'M')
-            date.period = date.period.apply(lambda x: math.ceil(x))
-            date.period = date.period + 1
-            
-            #date['period'] = (date['end'].dt.to_period('M').sub(date['start'].dt.to_period('M')).apply(lambda x: x.n))
+            #date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'M')
             #date.period = date.period.apply(lambda x: math.ceil(x))
             #date.period = date.period + 1
+            
+            date['period'] = (date['end'].dt.to_period('M').sub(date['start'].dt.to_period('M')).apply(lambda x: x.n))
+            date.period = date.period.apply(lambda x: math.ceil(x))
+            date.period = date.period + 1
 
         # # Computo del total de semanas
         else:
-            date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'W')
-            date.period = date.period.apply(lambda x: int(round(x, 0)))
+            #date['period'] = (date['end'] - date['start']) / np.timedelta64(1, 'W')
+            #date.period = date.period.apply(lambda x: int(round(x, 0)))
+            
+            date['period'] = (date['end'].dt.to_period('W').sub(date['start'].dt.to_period('W')).apply(lambda x: x.n))
+            date.period = date.period.apply(lambda x: math.ceil(x))
+            #date.period = date.period + 1
 
         # Generacion de identificador
         date["label"] = date[columns[:-1]].apply("_".join, axis = 1)
@@ -737,7 +750,7 @@ class Functions():
 
         # Pivoteo en base al parseo del año/mes sobre las identificadores y sumatoria de los ingresos
         data = data.pivot(index = "label", columns = name_col, values = 'revenue').reset_index().fillna(0)
-        #data_xyz = self.get_data_XYZ(data.copy())
+        data_xyz = self.get_data_XYZ(data.copy())
         print(data.shape)
 
         # Computo del total de los ingresos
@@ -768,7 +781,7 @@ class Functions():
         data.total_revenue = data.total_revenue.astype(int)
 
         # Concatenacion de los modelos ABC y XYZ
-        #data = pd.merge(data, data_xyz, how = "left", on = ["label"])
+        data = pd.merge(data, data_xyz, how = "left", on = ["label"])
         data = pd.merge(data, grouped_rank, how = "left", on = ["label", 'category_abc'])
 
         return data
@@ -875,11 +888,8 @@ class Functions():
         grouped_abc["%_abc"] =  grouped_abc.groupby(["granularity"])["count_abc"].apply(lambda x:  round(100 * (x / x.sum()))).reset_index(drop = True)
         grouped_abc['%_rank'] = round((grouped_abc['count_label'] / grouped_abc['count_label'].sum()) * 100, 2)
 
-        #grouped_xyz = data.groupby(['granularity', 'category_xyz']).agg(count_xyz = ('label', 'count')).reset_index()
-        #grouped_xyz["%_xyz"] =  grouped_xyz.groupby(["granularity"])["count_xyz"].apply(lambda x:  round(100 * (x / x.sum()))).reset_index(drop = True)
-
-        #data = pd.merge(grouped_abc, grouped_xyz, how = "left", on = ["label"])
-        #data = pd.concat([grouped_abc, grouped_xyz.drop("granularity", axis = 1)], axis = 1, ignore_index = False)
+        grouped_xyz = data.groupby(['granularity', 'category_xyz']).agg(count_xyz = ('label', 'count')).reset_index()
+        grouped_xyz["%_xyz"] =  grouped_xyz.groupby(["granularity"])["count_xyz"].apply(lambda x:  round(100 * (x / x.sum()))).reset_index(drop = True)
 
         #grouped_rank = data.groupby(['granularity', 'category_abc']).agg(total_sales = ('total_sales', 'sum')).reset_index()        
         #grouped_rank["total"] =  grouped_rank.groupby(["granularity"])["total_sales"].apply(lambda x:  round(100 * (x / x.sum()))).reset_index(drop = True)
@@ -894,9 +904,11 @@ class Functions():
             #break
         print("--------------------------+++++++++++++++++++++++++++++++")
 
+        #data = pd.merge(grouped_abc, grouped_xyz, how = "left", on = ["label"])
+        data = pd.concat([grouped_abc, grouped_xyz.drop("granularity", axis = 1)], axis = 1, ignore_index = False)
         #data = pd.concat([grouped_abc, grouped_rank.drop(["granularity", "category_abc"], axis = 1)], axis = 1, ignore_index = False)
 
-        return grouped_abc
+        return data #grouped_abc
 
     # Modulo: Generacion de las metricas del analisis de los intervalos de demanda
     def get_demand_classifier(self, data_frame_metric):
@@ -915,11 +927,12 @@ class Functions():
         data_final.cv2.fillna(0, inplace = True)
 
         # Validacion - Nulos, Activo o Min Semanas
-        data_final.category_behavior.fillna("none", inplace = True)
-        data_final.loc[data_final.active == 0, "category_behavior"] = "none"
-        data_final.loc[data_final.flag_week_min == 1, "category_behavior"] = "none"
-        data_final.loc[data_final.adi == 0, "category_behavior"] = "none"
-        data_final.drop("flag_week_min", axis = 1, inplace = True)
+        data_final.category_behavior.fillna("N/A", inplace = True)
+        #data_final.loc[data_final.active == 0, "category_behavior"] = "none"
+        data_final.loc[data_final.flag_week_min == 1, "category_behavior"] = "limit_data"
+        data_final.loc[data_final.adi == 0, "category_behavior"] = "N/A"
+        #data_final.drop("flag_week_min", axis = 1, inplace = True)
+        data_final.rename(columns = {"flag_week_min": "flag_new"}, inplace = True)
 
         return data_final
     
@@ -956,6 +969,7 @@ class Functions():
 
         return detail_data_gran
 
+    # Modulo: Integracion de la categoria de comportamiento de inventario de demanda
     def set_catgory_data(self, data, data_demand, col_gran):
         # Transformacion de tipo de valor
         fil_data = []
@@ -969,12 +983,18 @@ class Functions():
             data[col_name] = data[fil_data].apply("_".join, axis = 1)
 
             # Join del tipo de categoria por granularidad
-            data = pd.merge(data, data_demand[["label", "category_behavior"]], how = "left", left_on = col_name, right_on = 'label')
+            #data = pd.merge(data, data_demand[["label", "category_behavior"]], how = "left", left_on = col_name, right_on = 'label')
+            #data.rename(columns = {"category_behavior": "cat_beh_gran_" + str(idx)}, inplace = True)
+            data = pd.merge(data, data_demand[["label", "category_behavior", "flag_new"]], how = "left", left_on = col_name, right_on = 'label')
+            #data.rename(columns = {"category_behavior": "cat_beh_gran_" + str(idx), "flag_new": "flag_ben_gran_" + str(idx)}, inplace = True)
+            data = data[(data.flag_new != 1) | (data.category_behavior != "N/A")]
+            #data = data[(data.flag_new != 1)]
             data.rename(columns = {"category_behavior": "cat_beh_gran_" + str(idx)}, inplace = True)
-            data.drop("label", axis = 1, inplace = True)
+            data.drop(["label", "flag_new"], axis = 1, inplace = True)
 
         return data
 
+    # Modulo: Seleecion de la metrica predominante por cada modelo entrenado
     def get_best_metric(self, values, metric):
         """
         MAE (Error absoluto medio) -> Diferencia entre pronostico y real (promedio del error absoluto)
@@ -1017,9 +1037,9 @@ class Functions():
             #print(max_r2)
             return max_r2
 
-    # Modulo:
+    # Modulo: Evaluacion y determinacion del modelo predomiante
     def get_evaluate_model(self, data):
-        best_models = []   
+        best_models = []
         for label in data['label'].unique():
             temp = data[data.label == label]
             #temp.drop(temp.columns.tolist()[-3:], axis = 1, inplace = True)
@@ -1078,21 +1098,75 @@ class Functions():
 
                 # Si existe mas de un modelo representativo, determinar el modelo por la variable de tiempo
                 if len([i for i in list(count_best_model.values()) if i == count_max_model]) > 1:
-                    print("Validacion por tiempo")
+                    #print("Validacion por tiempo")
                     min_sec = min(temp[temp.type_model.isin(list_model)].seconds.values.tolist())
-                    best_models.append(df[df.seconds == min_sec].type_model.values.tolist()[0])
+                    best_models.append({"label": label, "model": df[df.seconds == min_sec].type_model.values.tolist()[0]})
+                    print("\n >> Mejor modelo ({}): {}".format(label, df[df.seconds == min_sec].type_model.values.tolist()[0]))
 
                 else:
-                    best_models.append(list(count_best_model.keys())[list(count_best_model.values()).index(count_max_model)])
+                    best_models.append({"label": label, "model": list(count_best_model.keys())[list(count_best_model.values()).index(count_max_model)]})
+                    print("\n >> Mejor modelo ({}): {}".format(label, list(count_best_model.keys())[list(count_best_model.values()).index(count_max_model)]))
 
             # Determinar el modelo mas representativo
             else:
-                best_models.append(list(count_best_model.keys())[list(count_best_model.values()).index(count_max_model)])
+                best_models.append({"label": label, "model": list(count_best_model.keys())[list(count_best_model.values()).index(count_max_model)]})
+                print("\n >> Mejor modelo ({}): {}".format(label, list(count_best_model.keys())[list(count_best_model.values()).index(count_max_model)]))
 
-            print("\n >> Mejor modelo ({}): {}".format(label, best_models[-1]))
             #break
-            
+
+        best_models = pd.DataFrame.from_dict(best_models)
         return best_models
+
+    def stationarity_check(self, TS):
+        # Perform the Dickey Fuller Test
+        dftest = adfuller(TS) # change the passengers column as required 
+
+        # Print Dickey-Fuller test results
+        #print ('Results of Dickey-Fuller Test:')
+
+        dfoutput = pd.Series(dftest[0:4], index = ['Test Statistic','p-value','#Lags Used','Number of Observations Used'])
+        for key,value in dftest[4].items():
+            dfoutput['Critical Value (%s)'%key] = value
+        #print (dfoutput)
+
+        return dfoutput
+
+    # Modulo:
+    def get_graph_series_data(self, data, col_serie, period):
+        dict_period = {"daily": 7, "week": 52, "month": 12}
+        data = data.set_index(col_serie[0])
+        data.sort_index(inplace = True)
+
+        # Calculo de estacionalidad mult y addiptive
+        mult_decomp = seasonal_decompose(data[col_serie[1]], model = 'multiplicative', period = dict_period[period])
+        add_decomp = seasonal_decompose(data[col_serie[1]], model = 'additive', period = dict_period[period])
+        residual_m = mult_decomp.resid
+        residual_a = add_decomp.resid
+        residual_m.dropna(inplace = True)
+        residual_a.dropna(inplace = True)
+
+        # Evaluacion de los tipos de estacionalidad por fuller y acf
+        add = self.stationarity_check(residual_a)
+        mult = self.stationarity_check(residual_m)
+        acf_m = round(sum(pd.Series(sm.tsa.acf(mult_decomp.resid)).fillna(0)), 2)
+        acf_a = round(sum(pd.Series(sm.tsa.acf(add_decomp.resid)).fillna(0)), 2)
+
+        # Evaluacion de metricas para determinar si la serie es mult o add
+        if add["p-value"].round(4) == mult["p-value"].round(4):
+            #print("opcion 1")
+            if acf_a > acf_m:
+                return [add["p-value"].round(4), acf_a, mult["p-value"].round(4), acf_m, "additive"], add_decomp
+
+            else:
+                return [add["p-value"].round(4), acf_a, mult["p-value"].round(4), acf_m, "multiplicative"], mult_decomp
+
+        elif add["p-value"].round(4) < mult["p-value"].round(4):
+            #print("opcion 2")
+            return [add["p-value"].round(4), acf_a, mult["p-value"].round(4), acf_m, "additive"], add_decomp
+
+        else:
+            #print("opcion 3")
+            return [add["p-value"].round(4), acf_a, mult["p-value"].round(4), acf_m, "multiplicative"], mult_decomp
 
     # Modulo: Computo de tiempos sobre un proceso
     def get_time_process(self, seg):
