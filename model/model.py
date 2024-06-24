@@ -67,7 +67,7 @@ class Model_Series_Times():
         self.minMaxScaler = MinMaxScaler()
         self.powerTransf = PowerTransformer(method='box-cox', standardize=False)
 
-    # Modulo:
+    # Modulo: Computo y evaluacion de metricas del fosct del modelo
     def get_metrics_pred(self, X_test, name_col_real, name_col_pred):
         """
         MAE (Error absoluto medio) -> Diferencia entre pronostico y real (promedio del error absoluto)
@@ -381,6 +381,7 @@ class Model_Series_Times():
 
         return data_metric, train_model
 
+    # Modulo: Definicion del los parametros para la seleccion del mejor modelo ajustado
     def parameter_prophet(self):
         params_grid = dict(#growth = ['linear', 'logistic', 'flat'],
                            growth = ['linear', 'flat'],
@@ -403,7 +404,7 @@ class Model_Series_Times():
         
         return params_grid
 
-    # Modulo:
+    # Modulo: Busqueda de los hyperparametros
     def get_hyperparameters_prophet(self, params_grid):
         params_evaluated = []
         results = []
@@ -795,7 +796,7 @@ class Model_Series_Times():
 
         return data_metric
 
-    # Modulo:
+    # Modulo: Modelos Arima, CostanClassic y CrostanSB
     def get_models_statsForecast(self, data, var_obs, period, size_period):
         data = data.dropna().reset_index(drop = True)
         name_col_transf = var_obs[1] + "_scaled"
@@ -940,7 +941,7 @@ class Model_Series_Times():
 
         return data_metric, col_pred, data_fsct
 
-    # Modulo:
+    # Modulo: Modelo DeepAR (red neuronal)
     def get_model_deepAR(self, data, col_serie):
         data = data.dropna().reset_index(drop = True)
         total_data = len(data)
@@ -1031,7 +1032,7 @@ class Model_Series_Times():
 
         #print(r2_score( list(test_ds)[0]['target'][-28:], predictions))
 
-    # Modulo:
+    # Modulo: Modelo ForecasterAutoreg (DecisionTreeRegressor)
     def get_model_forecasters(self, data, var_obs):
         data = data.dropna().reset_index(drop = True)
         total_data = len(data)

@@ -135,6 +135,49 @@ class Main_Demand_Series_Times():
                 col_obs_abc = self.functions.select_var_abc(data)
                 print(" >> Variables analisis de tiempo: {}\n".format(str(col_obs_abc).replace("[", "").replace("]", "")))
 
+        print("+*+*"*30)
+
+        # Seleccion de las variables (precio, obs y costo)
+        col_obs_hml = self.functions.select_var_hml(data)
+        print(" >> Variables analisis de hml: {}\n".format(str(col_obs_hml).replace("[", "").replace("]", "")))
+        while True:
+            validate = input('Las variables seleccionadas son correctas (y / n): ')
+            if validate.lower() == "y":
+                break
+            
+            elif (validate.lower() != "y") & (validate.lower() != "n"):
+                print("\n > Opcion invalida. Seleccione: y -> si o n -> no !!! \n")
+                
+            elif validate.lower() == "n":
+                col_obs_hml = self.functions.select_var_hml(data)
+                print(" >> Variables analisis de tiempo: {}\n".format(str(col_obs_hml).replace("[", "").replace("]", "")))
+
+        print("+*+*"*30)
+
+        # Seleccion del porcentaje de HML
+        perc_hml = self.functions.select_percentage_hml()
+        print(" >> Porcentajes de hml: {}\n".format(str(perc_hml).replace("[", "").replace("]", "")))
+        while True:
+            sum_perc_hml = sum(list(perc_hml.values()))
+            if sum_perc_hml == 100:
+                validate = input('Las variables seleccionadas son correctas (y / n): ')
+                if validate.lower() == "y":
+                    break
+                
+                elif (validate.lower() != "y") & (validate.lower() != "n"):
+                    print("\n > Opcion invalida. Seleccione: y -> si o n -> no !!! \n")
+                    
+                elif validate.lower() == "n":
+                    perc_hml = self.functions.select_percentage_hml()
+                    print(" >> Porcentajes de hml: {}\n".format(str(perc_hml).replace("[", "").replace("]", "")))
+                    
+            else:
+                print("\n >>> Error: La suma total del porcentaje ingresado en menor a 100 !!! \n ")
+                perc_hml = self.functions.select_percentage_hml()
+                print(" >> Porcentajes de hml: {}\n".format(str(perc_hml).replace("[", "").replace("]", "")))
+
+        print("+*+*"*30)
+
         # Seleccion de las variables para filtrar la granularidad de los datos
         col_gran = self.functions.select_gran_data(data)
         print(" >> Granularidad seleccionada: {}\n".format(str(col_gran).replace("[", "").replace("]", "")))
@@ -152,7 +195,7 @@ class Main_Demand_Series_Times():
 
         print("+*+*"*30)
                 
-        return data, period, col_serie, col_obs_abc, col_gran, name_file.split(".")[0]
+        return data, period, col_serie, col_obs_abc, col_obs_hml, perc_hml, col_gran, name_file.split(".")[0]
 
     # Modulo: Analisis y generacion de los patrones de demanda para la viabilidad de clasificacion de observaciones
     def data_demand(self, data, period, col_serie, col_gran, name_file):
@@ -366,6 +409,7 @@ class Main_Demand_Series_Times():
                         metric_name = str(list(name)[0]) + "-" + col
                         data_frame_metric[metric_name] = data_metric[data_metric.model == col].drop("model", axis = 1)
 
+                    data_fsct["granularity"] = "_".join(col_gran[:idx + 1])
                     data_fsct_models = pd.concat([data_fsct_models, data_fsct], axis = 0, ignore_index = False)
 
                 if 4 in select_models:
@@ -379,6 +423,7 @@ class Main_Demand_Series_Times():
                     metric_name = str(list(name)[0]) + "-Arima"
                     data_frame_metric[metric_name] = data_metric
 
+                    data_fsct["granularity"] = "_".join(col_gran[:idx + 1])
                     data_fsct_models = pd.concat([data_fsct_models, data_fsct], axis = 0, ignore_index = False)
 
                 #start_time_model = time()
@@ -402,6 +447,7 @@ class Main_Demand_Series_Times():
                     metric_name = str(list(name)[0]) + "-Prophet"
                     data_frame_metric[metric_name] = data_metric
                     
+                    data_fsct["granularity"] = "_".join(col_gran[:idx + 1])
                     data_fsct_models = pd.concat([data_fsct_models, data_fsct], axis = 0, ignore_index = False)
 
                 #self.model.get_model_forecasters(group, self.col_serie)
@@ -438,6 +484,7 @@ class Main_Demand_Series_Times():
                     column = segment + col_serie + [col_obs_abc[0]]
                     dict_seg = {segment[0]: group[segment[0]].unique().tolist(), segment[1]: group[segment[1]].unique().tolist()}
                     data_fsct = self.model.get_fsct_trees(data[column].copy(), dict_seg, model, period, size_period, "LGBM")
+                    data_fsct["granularity"] = "_".join(col_gran[:idx + 1])
                     data_fsct_models = pd.concat([data_fsct_models, data_fsct], axis = 0, ignore_index = False)
                 
                 if 7 in select_models:
@@ -454,6 +501,7 @@ class Main_Demand_Series_Times():
                     column = segment + col_serie + [col_obs_abc[0]]
                     dict_seg = {segment[0]: group[segment[0]].unique().tolist(), segment[1]: group[segment[1]].unique().tolist()}
                     data_fsct = self.model.get_fsct_trees(data[column].copy(), dict_seg, model, period, size_period, "CatBoost")
+                    data_fsct["granularity"] = "_".join(col_gran[:idx + 1])
                     data_fsct_models = pd.concat([data_fsct_models, data_fsct], axis = 0, ignore_index = False)
 
                 #break
@@ -633,7 +681,7 @@ class Main_Demand_Series_Times():
 
     def main(self):
         # Bandera de prueba
-        test = False
+        test = True
         try:
             start_time = time()
         
@@ -643,12 +691,12 @@ class Main_Demand_Series_Times():
             self.model = Model_Series_Times(self.path, test)
 
             # Seleccion del tipo de fuente para la extraccion de los datos
-            #source_data = self.functions.select_source_data()
-            source_data = 1
+            source_data = self.functions.select_source_data()
+            #source_data = 1
             # Extraccion de datos por archivo y seleccion de variables analizar
             if source_data == 1:
-                #data, period, col_serie, col_obs_abc, col_gran, name_file = self.select_options()
-                pass
+                data, period, col_serie, col_obs_abc, col_obs_hml, perc_hml, col_gran, name_file = self.select_options()
+                #pass
 
             # Extraccion de datos por base de datos (Fijar las variables analizar, si no aplicar el modulo "select_options")
             elif source_data == 2:
@@ -666,25 +714,26 @@ class Main_Demand_Series_Times():
 
             #sys.exit()
             #print(period, col_serie, col_gran, name_file)
-            source_data = 1
-            period = "month" # week, month
-            col_serie = ['fecha', 'sales']
-            col_gran = ['dept_nbr', 'store_nbr'] #'dept_nbr', 'store_nbr'
-            col_obs_abc = ['price', "sales"]
-            col_obs_hml = ['price', "sales", "N/A"]
-            dict_hml = {"h": 20, "m":30, "l":50}
-            size_period = 3
+            #source_data = 1
+            #period = "month" # week, month
+            #col_serie = ['fecha', 'sales']
+            #col_gran = ['dept_nbr', 'store_nbr'] #'dept_nbr', 'store_nbr'
+            #col_obs_abc = ['price', "sales"]
+            #col_obs_hml = ['price', "sales", "N/A"]
+            #perc_hml = {"h": 20, "m":30, "l":50}
+            #size_period = 3
             #name_file = "data_Atom_agu_3.csv"
-            name_file = "data_Atom_agu.csv"
+            #name_file = "data_Atom_agu.csv"
             
-            data = self.queries.get_data_file(name_file)
+            #data = self.queries.get_data_file(name_file)
             data = data.dropna()
             #data[col_serie[0]] = pd.to_datetime(data[col_serie[0]], format = "%d/%m/%Y", dayfirst = True)
             #data[col_serie[0]] = data[col_serie[0]].apply(lambda x: pd.to_datetime(x).strftime("%Y-%m-%d"))
-            data[col_serie[0]] = pd.to_datetime(data[col_serie[0]], format = "%Y-%m-%d")
+            #data[col_serie[0]] = pd.to_datetime(data[col_serie[0]], format = "%Y-%m-%d")
             print(data.head())
-            name_file = "data_Atom_agu"
+            #name_file = "data_Atom_agu"
             print("*+*+"*30)
+            sys.exit()
 
             print("\n >>> Proceso: Clasificacion de los patrones de demanda <<<\n")
             # Proceso: Clasificación de los patrones de demanda
@@ -737,7 +786,7 @@ class Main_Demand_Series_Times():
 
             print("\n >>> Proceso: Clasificacion de HML <<<\n")
             # Proceso: Generacion del HML por cada clasificacion de demanda y categoria ABC
-            data_hml, detail_data_hml = self.data_hml(data.copy(), data_final.copy(), col_gran, col_obs_hml, dict_hml)
+            data_hml, detail_data_hml = self.data_hml(data.copy(), data_final.copy(), col_gran, col_obs_hml, perc_hml)
             print("\n >>> DataFrame: HML <<< \n")
             print(data_hml.head())
             print("\n > Volumen: ", data_hml.shape)
@@ -790,7 +839,7 @@ class Main_Demand_Series_Times():
 
             print("\n >>> DataFrame: Forecast Modelos <<<\n")
             print(data_fsct_models.head())
-            data_fsct_models.to_csv("/home/baroal/Documentos/softtek/demanda_pronostico/source/predicts.csv", index = False)
+            #data_fsct_models.to_csv("/home/baroal/Documentos/softtek/demanda_pronostico/source/predicts.csv", index = False)
             print("\n > Volumen: ", data_fsct_models.shape)
             print("---"*20)
 
@@ -848,8 +897,11 @@ class Main_Demand_Series_Times():
                 # Proceso: Guardado de archivo csv - metrics models
                 self.queries.save_data_file_csv(data_metric, name_folder, name_file = name_file + "_metrics")
 
+                # Proceso: Guardado de archivo csv - forecast models
+                self.queries.save_data_file_csv(data_fsct_models, name_folder, name_file = name_file + "_fsct")
+
                 # Proceso: Guardado de archivo excel
-                self.queries.save_data_file_excel(data_final, detail_data_gran, detail_data_abc, detail_data_hml, data_metric, name_folder)
+                self.queries.save_data_file_excel(data_final, detail_data_gran, detail_data_abc, detail_data_hml, data_metric, data_fsct_models, name_folder)
 
             else:
                 self.queries.save_data_bd(detail_data_gran)
@@ -859,8 +911,13 @@ class Main_Demand_Series_Times():
             print('\n >>>> El analisis tardo <<<<')
             self.functions.get_time_process(round(end_time - start_time, 2))
 
-        except Exception as e:
-            print(traceback.format_exc())
+        except Exception as error:
+            error = str(error).replace('"','').replace("'","")
+            if error.find('exit') != -1:
+                print("\n >>>> Aplicacion Finalizada por el usuario !!!\n")
+            
+            else:
+                print(traceback.format_exc())
         
 if __name__ == "__main__":
     # Proceso de analisis

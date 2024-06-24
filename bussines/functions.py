@@ -26,6 +26,27 @@ class Functions():
         self.path = path
         self.test = test
     
+    # Modulo: Descripcion de la aplicacion
+    def get_info(self):
+        print(""" \n 
+              ###########################################################################
+              #  Consideraciones para la implementacion del acelerador de pronoscticos  #
+              #                                                                         #
+              #  Variables - Clasificador de patrones de demanda & Series de Tiempo     #
+              #  - Tiempo & observacion (ingresos, ventas, etc.)                        #
+              #                                                                         #
+              #  Variables - Clasificador de inventario & demanda - (ABC, XYZ)          #
+              #  - Precio y observacion (ingresos, ventas, etc.)                        #
+              #                                                                         #
+              #  Variables - Clasificacion de utilidad - (HML)                          #
+              #  - Precio, observacion (ingresos, ventas, etc.) y costo neto            #
+              #  - Seleccion del porcentaje de utilidad                                 #
+              #                                                                         #
+              #                                                                         #
+              # Nota: El acelerador de pronosticos no podra ejecutarse, si la fuente de #
+              #       datos no contiene todas las variables mencionadas                 #
+              ###########################################################################""")
+
     # Modulo: Verificacion de carpeta de resultados
     def validate_path(self, name_folder):
         if not self.test:
@@ -106,20 +127,26 @@ class Functions():
         for idx, col_name in enumerate(columns):
             print(" > {} - {}".format(idx + 1, col_name))
 
-        print(" > {} - Salir\n".format(len(columns) + 1))
+        print(" > {} - finalizar seleccion \n".format(len(columns) + 1))
 
     # Modulo: Determinacion de las variables analizar de la fuente de datos seleccionada
     def select_variables_data(self, data):
+        self.get_info()
+
         print("\n >>> Selecione las variables analizar <<< \n")
         columns = data.columns.tolist()
         self.visual_variables(columns)
+        print(" > {} - salir de aplicacion\n".format(len(columns) + 2))
 
         list_col = []
         total = len(columns) + 1
         while True:
             try:
                 x = int(input('Ingrese numero de columna: '))
-                if x == total:
+                if x == (len(columns) + 2):
+                    raise NameError("exit")
+
+                elif x == total:
                     break
 
                 elif (x < 1) | (x > total):
@@ -131,8 +158,13 @@ class Functions():
                 else:
                     list_col.append(x)
 
-            except:
-                print("\n >> Error: Ingrese un valor numerico !!! \n")
+            except Exception as error:
+                error = str(error).replace('"','').replace("'","")
+                if error.find('exit') != -1:
+                    raise NameError("exit")
+                
+                else:
+                    print("\n >> Error: Ingrese un valor numerico !!! \n")
 
         col_name = []
         for index in list_col:
@@ -174,8 +206,9 @@ class Functions():
 
         return period
 
-    # Modulo: determinacion de las variables (Tiempo y observacion) para el analisis de series de tiempo y computo del intervalo medio de demanda
+    # Modulo: Determinacion de las variables (Tiempo y observacion) para el analisis de series de tiempo y computo del intervalo medio de demanda
     def select_var_series(self, data):
+        print("\n #### Variables: Clasificacion de patrones de demanda (smooth, intermittent, erratic & lumpy) & Series de Tiempo ####")
         print("\n >>> Seleccion variable tiempo y observacion <<< \n")
         columns = data.columns.tolist()
         for idx, col_name in enumerate(columns):
@@ -222,16 +255,17 @@ class Functions():
         while True:
             try:
                 x = int(input('Ingrese numero de columna (Observacion): '))
-                type = data[columns[x - 1]].dtype
                 if (x < 1) | (x > total):
                     print("\n Indice incorrecto !!! \n")
 
-                if (type == "int64") | (type == "int") | (type == "float64") | (type == "float"):
-                    col_name.append(x)
-                    break
-
                 else:
-                    print("\n >>> Error: Variable seleccionado no contiene un formato tipo: \'Numerico\' !!! \n")
+                    type = data[columns[x - 1]].dtype
+                    if (type == "int64") | (type == "int") | (type == "float64") | (type == "float"):
+                        col_name.append(x)
+                        break
+
+                    else:
+                        print("\n >>> Error: Variable seleccionado no contiene un formato tipo: \'Numerico\' !!! \n")
 
             except:
                 print("\n >> Error: Ingrese un valor numerico !!! \n")
@@ -245,8 +279,9 @@ class Functions():
 
         return col_serie
 
-    # Modulo: determinacion de las variables (precio y ingresos) para la clasificacion inventario ABC
+    # Modulo: Determinacion de las variables (precio y ingresos) para la clasificacion inventario ABC
     def select_var_abc(self, data):
+        print("\n #### Variables: Clasificacion de inventario & demanda - (ABC, XYZ) ####")
         print("\n >>> Seleccion variable precio y observacion (ingresos, ventas, etc.) <<< \n")
         columns = data.columns.tolist()
         for idx, col_name in enumerate(columns):
@@ -260,16 +295,17 @@ class Functions():
         while True:
             try:
                 x = int(input('Ingrese numero de columna (precio): '))
-                type = data[columns[x - 1]].dtype
                 if (x < 1) | (x > total):
                     print("\n Indice incorrecto !!! \n")
-
-                if (type == "int64") | (type == "int") | (type == "float64") | (type == "float"):
-                    col_name.append(x)
-                    break
-
+    
                 else:
-                    print("\n >>> Error: Variable seleccionado no contiene un formato tipo: \'Numerico\' !!! \n")
+                    type = data[columns[x - 1]].dtype
+                    if (type == "int64") | (type == "int") | (type == "float64") | (type == "float"):
+                        col_name.append(x)
+                        break
+
+                    else:
+                        print("\n >>> Error: Variable seleccionado no contiene un formato tipo: \'Numerico\' !!! \n")
 
             except:
                 print("\n >> Error: Ingrese un valor numerico !!! \n")
@@ -278,16 +314,17 @@ class Functions():
         while True:
             try:
                 x = int(input('Ingrese numero de columna (ingresos, ventas, etc.): '))
-                type = data[columns[x - 1]].dtype
                 if (x < 1) | (x > total):
                     print("\n Indice incorrecto !!! \n")
 
-                if (type == "int64") | (type == "int") | (type == "float64") | (type == "float"):
-                    col_name.append(x)
-                    break
-
                 else:
-                    print("\n >>> Error: Variable seleccionado no contiene un formato tipo: \'Numerico\' !!! \n")
+                    type = data[columns[x - 1]].dtype
+                    if (type == "int64") | (type == "int") | (type == "float64") | (type == "float"):
+                        col_name.append(x)
+                        break
+
+                    else:
+                        print("\n >>> Error: Variable seleccionado no contiene un formato tipo: \'Numerico\' !!! \n")
 
             except:
                 print("\n >> Error: Ingrese un valor numerico !!! \n")
@@ -300,6 +337,116 @@ class Functions():
         print("---"*20)
 
         return col_var_abc
+    
+    # Modulo: Determinacion de las variables (precio, ingresos y costo) para la clasificacion HML
+    def select_var_hml(self, data):
+        print("\n #### Variables: Clasificacion de utilidad - (HML) ####")
+        print("\n >>> Seleccion variable precio, observacion (ingresos, ventas, etc.) y costo <<< \n")
+        columns = data.columns.tolist()
+        for idx, col_name in enumerate(columns):
+            print(" > {} - {}".format(idx + 1, col_name))
+
+        print(" > {} - costo (dummy)".format(len(columns) + 1))
+        print()
+        print(" # Nota: Si no existe la variable costo seleccionar \'costo (dummy)\' para la generacion automatica. \n")
+        col_name = []
+        total = len(columns) + 1
+
+        # Proceso: Validacion de tipo formato y seleccion de variable (precio)
+        while True:
+            try:
+                x = int(input('Ingrese numero de columna (precio): '))
+                if (x < 1) | (x > total):
+                    print("\n Indice incorrecto !!! \n")
+
+                else:
+                    type = data[columns[x - 1]].dtype
+                    if (type == "int64") | (type == "int") | (type == "float64") | (type == "float"):
+                        col_name.append(x)
+                        break
+
+                    else:
+                        print("\n >>> Error: Variable seleccionado no contiene un formato tipo: \'Numerico\' !!! \n")
+
+            except:
+                print("\n >> Error: Ingrese un valor numerico o seleccione una columna diferente a \'costo (dummy)\' !!! \n")
+
+        # Proceso: Validacion de tipo formato y seleccion de variable (ingresos, ventas, etc.)
+        while True:
+            try:
+                x = int(input('Ingrese numero de columna (ingresos, ventas, etc.): '))
+                if (x < 1) | (x > total):
+                    print("\n Indice incorrecto !!! \n")
+
+                else:
+                    type = data[columns[x - 1]].dtype
+                    if (type == "int64") | (type == "int") | (type == "float64") | (type == "float"):
+                        col_name.append(x)
+                        break
+
+                    else:
+                        print("\n >>> Error: Variable seleccionado no contiene un formato tipo: \'Numerico\' !!! \n")
+
+            except:
+                print("\n >> Error: Ingrese un valor numerico o seleccione una columna diferente a \'costo (dummy)\' !!! \n")
+                
+        # Proceso: Validacion de tipo formato y seleccion de costo
+        while True:
+            try:
+                x = int(input('Ingrese numero de columna (costo): '))
+                if (x < 1) | (x > total):
+                    print("\n Indice incorrecto !!! \n")
+  
+                elif x == total:
+                    col_name.append(x)
+                    break
+
+                else:
+                    type = data[columns[x - 1]].dtype
+                    if (type == "int64") | (type == "int") | (type == "float64") | (type == "float"):
+                        col_name.append(x)
+                        break
+
+                    else:
+                        print("\n >>> Error: Variable seleccionado no contiene un formato tipo: \'Numerico\' !!! \n")
+
+            except:
+                print("\n >> Error: Ingrese un valor numerico !!! \n")
+
+        col_var_hml = []
+        for index in col_name:
+            index -= 1
+            if index == (total - 1):
+                col_var_hml.append("N/A")
+
+            else:
+                col_var_hml.append(columns[index])
+
+        print("---"*20)
+
+        return col_var_hml
+
+    # Modulo: Determinar el valor porcentual de cada categoria HML
+    def select_percentage_hml(self):
+        print("\n >>> Determinacion del porcentaje - (HML) <<< \n")
+        perc_hml = {"h": 0, "m": 0, "l":0}
+        keys = list(perc_hml.keys())
+        cont = 0
+        # Proceso: Validacion del valor porcentual para cada categoria HML
+        while True:
+            try:
+                x = int(input('Ingrese un porcentaje entero ({}): '.format(keys[cont])))
+                perc_hml[keys[cont]] = x
+                cont += 1
+                if cont == len(keys):
+                    break
+
+            except:
+                print("\n >> Error: Ingrese un valor numerico tipo entero !!! \n")
+
+        print("---"*20)
+
+        return perc_hml
 
     # Modulo: Determinacion de la granularidad de los datos
     def select_gran_data(self, data):
@@ -1147,6 +1294,7 @@ class Functions():
         best_models = pd.DataFrame.from_dict(best_models)
         return best_models
 
+    # Modulo: Evaluacion y determinacion de metricas de estacionalidad
     def stationarity_check(self, TS):
         # Perform the Dickey Fuller Test
         dftest = adfuller(TS) # change the passengers column as required 
@@ -1237,7 +1385,7 @@ class Functions():
 
         return data_serie
 
-    # Modulo:
+    # Modulo: Generacion de los periodos (fechas) para la prediccion del fsct
     def validate_data_serie_models(self, start_date, period, size_period):
         if period == "month":
             days = 30 * size_period
