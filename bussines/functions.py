@@ -1210,7 +1210,7 @@ class Functions():
         elif period == "week":
             days = 7 * size_period
             start_date = end_date + relativedelta(days = -days)
-            data_serie['week'] = data_serie[col_serie[0]].dt.isocalendar().week        
+            data['week'] = data[col_serie[0]].dt.isocalendar().week        
 
         elif period == "daily":
             days = size_period

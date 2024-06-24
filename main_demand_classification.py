@@ -488,7 +488,6 @@ class Main_Demand_Series_Times():
             if len(temp) != 0:
                 for label in temp.label.unique().tolist():
                     value_xyz = temp[temp.label == label].category_xyz.unique().tolist()[0]
-                    print(value_xyz)
                     metrics, seasonal_data = self.functions.get_graph_series_data(temp[temp.label == label][col_serie], col_serie, period)
                     data_comp_seasonal.append({"label": label, "p-value_add": metrics[0], "acf_add": metrics[1], "p-value_mult": metrics[2], "acf_mult": metrics[3], "type_seasonal": metrics[4]})
 
@@ -667,7 +666,7 @@ class Main_Demand_Series_Times():
             #sys.exit()
             #print(period, col_serie, col_gran, name_file)
             source_data = 1
-            period = "month" # week, month
+            period = "week" # week, month
             col_serie = ['fecha', 'sales']
             col_gran = ['dept_nbr', 'store_nbr'] #'dept_nbr', 'store_nbr'
             col_obs_abc = ['price', "sales"]
