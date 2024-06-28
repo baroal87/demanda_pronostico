@@ -216,19 +216,11 @@ class Main_Demand_Series_Times():
     # Modulo: Analisis y generacion de los patrones de demanda para la viabilidad de clasificacion de observaciones
     def data_demand(self, data, period, col_serie, col_gran, name_file):
         print("\n >> DataFrame: {} <<<\n".format(col_serie[1]))
-        #try:
-        #    data[col_serie[0]] = pd.to_datetime(data[col_serie[0]], format = "%Y-%m-%d")
-            
-        #except:
-        #    data[col_serie[0]] = data[col_serie[0]].apply(lambda x: pd.to_datetime(x).strftime("%Y-%m-%d"))
-        #    data[col_serie[0]] = pd.to_datetime(data[col_serie[0]], format = "%Y-%m-%d")
-
         data = data[data[col_serie[1]] > 0]
         data['year'] = data[col_serie[0]].dt.year
         print(data.head())
         print("---"*30)
         
-        #col_gran = ["state_id", "cat_id", "dept_id", "store_id"] #"item_id"
         #years = data.year.unique().tolist()
         years = [data.year.min()]
         years.sort(reverse = True)
@@ -238,7 +230,7 @@ class Main_Demand_Series_Times():
             print("\n >> Year: ", year)
 
             # Analisis por la granularidad seleccionada
-            fill_data = col_serie.copy() #["date", "sales"]
+            fill_data = col_serie.copy()
             for col in col_gran:
                 # Filtracion de datos
                 fill_data.insert(0, col)
@@ -724,7 +716,7 @@ class Main_Demand_Series_Times():
                 
             else:
                 print(" >>> Error: Seleccion de fuente incorrecta !!!\n")
-                sys.exit()
+                raise NameError("error_source")
 
             #sys.exit()
             #print(period, col_serie, col_gran, name_file)
@@ -930,6 +922,10 @@ class Main_Demand_Series_Times():
                 print("\n >>>> Aplicacion Finalizada por el usuario !!!\n")
             
             elif error.find("error_file") != -1:
+                print("\n >> Aplicacion Finalizada !!!\n")
+
+            
+            elif error.find('error_source') != -1:
                 print("\n >> Aplicacion Finalizada !!!\n")
 
             else:
