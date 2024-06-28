@@ -10,6 +10,7 @@ from os.path import isfile, join
 
 import math
 from dateutil.relativedelta import relativedelta
+import datetime
 
 from scipy import stats
 import matplotlib.pyplot as plt
@@ -25,6 +26,27 @@ class Functions():
         self.path = path
         self.test = test
     
+    # Modulo: Descripcion de la aplicacion
+    def get_info(self):
+        print(""" \n 
+              ###########################################################################
+              #  Consideraciones para la implementacion del acelerador de pronoscticos  #
+              #                                                                         #
+              #  Variables - Clasificador de patrones de demanda & Series de Tiempo     #
+              #  - Tiempo & observacion (ingresos, ventas, etc.)                        #
+              #                                                                         #
+              #  Variables - Clasificador de inventario & demanda - (ABC, XYZ)          #
+              #  - Precio y observacion (ingresos, ventas, etc.)                        #
+              #                                                                         #
+              #  Variables - Clasificacion de utilidad - (HML)                          #
+              #  - Precio, observacion (ingresos, ventas, etc.) y costo neto            #
+              #  - Seleccion del porcentaje de utilidad                                 #
+              #                                                                         #
+              #                                                                         #
+              # Nota: El acelerador de pronosticos no podra ejecutarse, si la fuente de #
+              #       datos no contiene todas las variables mencionadas                 #
+              ###########################################################################""")
+
     # Modulo: Verificacion de carpeta de resultados
     def validate_path(self, name_folder):
         if not self.test:
@@ -57,16 +79,23 @@ class Functions():
         files = self.get_files_names()
         if len(files) == 0:
             print(" >> Error: No existen archivos en la direccion: {}".format(self.path))
-            sys.exit()
+            #sys.exit()
+            raise NameError("error_file")
 
         print("\n >>> Selecione el archivo (CSV) analizar <<< \n")
         for idx, file in enumerate(files):
             print(" > {}.- {}".format(idx + 1, file.split(".")[0]))
 
+        print("\n > {} - salir de aplicacion\n".format(len(files) + 1))
+
+        total = len(files) + 1
         while True:
             try:
                 index = int(input('\n Ingrese el indice del archivo: '))
-                if (index > 0) & (index <= len(files)):
+                if index == total:
+                    raise NameError("exit")
+
+                elif (index > 0) & (index <= total):
                     index -= 1
                     name_file = files[index]
                     break
@@ -74,8 +103,13 @@ class Functions():
                 else:
                     print("\n Opcion invalida !! \n")
                     
-            except:
-                print("\n >> Error: Ingrese un valor numerico !!! \n")
+            except Exception as error:
+                error = str(error).replace('"','').replace("'","")
+                if error.find('exit') != -1:
+                    raise NameError("exit")
+                
+                else:
+                    print("\n >> Error: Ingrese un valor numerico !!! \n")
 
         print("---"*20)
 
@@ -105,20 +139,26 @@ class Functions():
         for idx, col_name in enumerate(columns):
             print(" > {} - {}".format(idx + 1, col_name))
 
-        print(" > {} - Salir\n".format(len(columns) + 1))
+        print(" > {} - finalizar seleccion \n".format(len(columns) + 1))
 
     # Modulo: Determinacion de las variables analizar de la fuente de datos seleccionada
     def select_variables_data(self, data):
+        self.get_info()
+
         print("\n >>> Selecione las variables analizar <<< \n")
         columns = data.columns.tolist()
         self.visual_variables(columns)
+        print(" > {} - salir de aplicacion\n".format(len(columns) + 2))
 
         list_col = []
         total = len(columns) + 1
         while True:
             try:
                 x = int(input('Ingrese numero de columna: '))
-                if x == total:
+                if x == (len(columns) + 2):
+                    raise NameError("exit")
+
+                elif x == total:
                     break
 
                 elif (x < 1) | (x > total):
@@ -130,8 +170,13 @@ class Functions():
                 else:
                     list_col.append(x)
 
-            except:
-                print("\n >> Error: Ingrese un valor numerico !!! \n")
+            except Exception as error:
+                error = str(error).replace('"','').replace("'","")
+                if error.find('exit') != -1:
+                    raise NameError("exit")
+                
+                else:
+                    print("\n >> Error: Ingrese un valor numerico !!! \n")
 
         col_name = []
         for index in list_col:
@@ -173,8 +218,9 @@ class Functions():
 
         return period
 
-    # Modulo: determinacion de las variables (Tiempo y observacion) para el analisis de series de tiempo y computo del intervalo medio de demanda
+    # Modulo: Determinacion de las variables (Tiempo y observacion) para el analisis de series de tiempo y computo del intervalo medio de demanda
     def select_var_series(self, data):
+        print("\n #### Variables: Clasificacion de patrones de demanda (smooth, intermittent, erratic & lumpy) & Series de Tiempo ####")
         print("\n >>> Seleccion variable tiempo y observacion <<< \n")
         columns = data.columns.tolist()
         for idx, col_name in enumerate(columns):
@@ -221,16 +267,17 @@ class Functions():
         while True:
             try:
                 x = int(input('Ingrese numero de columna (Observacion): '))
-                type = data[columns[x - 1]].dtype
                 if (x < 1) | (x > total):
                     print("\n Indice incorrecto !!! \n")
 
-                if (type == "int64") | (type == "int") | (type == "float64") | (type == "float"):
-                    col_name.append(x)
-                    break
-
                 else:
-                    print("\n >>> Error: Variable seleccionado no contiene un formato tipo: \'Numerico\' !!! \n")
+                    type = data[columns[x - 1]].dtype
+                    if (type == "int64") | (type == "int") | (type == "float64") | (type == "float"):
+                        col_name.append(x)
+                        break
+
+                    else:
+                        print("\n >>> Error: Variable seleccionado no contiene un formato tipo: \'Numerico\' !!! \n")
 
             except:
                 print("\n >> Error: Ingrese un valor numerico !!! \n")
@@ -244,8 +291,9 @@ class Functions():
 
         return col_serie
 
-    # Modulo: determinacion de las variables (precio y ingresos) para la clasificacion inventario ABC
+    # Modulo: Determinacion de las variables (precio y ingresos) para la clasificacion inventario ABC
     def select_var_abc(self, data):
+        print("\n #### Variables: Clasificacion de inventario & demanda - (ABC, XYZ) ####")
         print("\n >>> Seleccion variable precio y observacion (ingresos, ventas, etc.) <<< \n")
         columns = data.columns.tolist()
         for idx, col_name in enumerate(columns):
@@ -259,16 +307,17 @@ class Functions():
         while True:
             try:
                 x = int(input('Ingrese numero de columna (precio): '))
-                type = data[columns[x - 1]].dtype
                 if (x < 1) | (x > total):
                     print("\n Indice incorrecto !!! \n")
-
-                if (type == "int64") | (type == "int") | (type == "float64") | (type == "float"):
-                    col_name.append(x)
-                    break
-
+    
                 else:
-                    print("\n >>> Error: Variable seleccionado no contiene un formato tipo: \'Numerico\' !!! \n")
+                    type = data[columns[x - 1]].dtype
+                    if (type == "int64") | (type == "int") | (type == "float64") | (type == "float"):
+                        col_name.append(x)
+                        break
+
+                    else:
+                        print("\n >>> Error: Variable seleccionado no contiene un formato tipo: \'Numerico\' !!! \n")
 
             except:
                 print("\n >> Error: Ingrese un valor numerico !!! \n")
@@ -277,16 +326,17 @@ class Functions():
         while True:
             try:
                 x = int(input('Ingrese numero de columna (ingresos, ventas, etc.): '))
-                type = data[columns[x - 1]].dtype
                 if (x < 1) | (x > total):
                     print("\n Indice incorrecto !!! \n")
 
-                if (type == "int64") | (type == "int") | (type == "float64") | (type == "float"):
-                    col_name.append(x)
-                    break
-
                 else:
-                    print("\n >>> Error: Variable seleccionado no contiene un formato tipo: \'Numerico\' !!! \n")
+                    type = data[columns[x - 1]].dtype
+                    if (type == "int64") | (type == "int") | (type == "float64") | (type == "float"):
+                        col_name.append(x)
+                        break
+
+                    else:
+                        print("\n >>> Error: Variable seleccionado no contiene un formato tipo: \'Numerico\' !!! \n")
 
             except:
                 print("\n >> Error: Ingrese un valor numerico !!! \n")
@@ -299,6 +349,138 @@ class Functions():
         print("---"*20)
 
         return col_var_abc
+    
+    # Modulo: Determinacion de las variables (precio, ingresos y costo) para la clasificacion HML
+    def select_var_hml(self, data):
+        print("\n #### Variables: Clasificacion de utilidad - (HML) ####")
+        print("\n >>> Seleccion variable precio, observacion (ingresos, ventas, etc.) y costo <<< \n")
+        columns = data.columns.tolist()
+        for idx, col_name in enumerate(columns):
+            print(" > {} - {}".format(idx + 1, col_name))
+
+        print(" > {} - costo (dummy)".format(len(columns) + 1))
+        print()
+        print(" # Nota: Si no existe la variable costo seleccionar \'costo (dummy)\' para la generacion automatica. \n")
+        col_name = []
+        total = len(columns) + 1
+
+        # Proceso: Validacion de tipo formato y seleccion de variable (precio)
+        while True:
+            try:
+                x = int(input('Ingrese numero de columna (precio): '))
+                if (x < 1) | (x > total):
+                    print("\n Indice incorrecto !!! \n")
+
+                else:
+                    type = data[columns[x - 1]].dtype
+                    if (type == "int64") | (type == "int") | (type == "float64") | (type == "float"):
+                        col_name.append(x)
+                        break
+
+                    else:
+                        print("\n >>> Error: Variable seleccionado no contiene un formato tipo: \'Numerico\' !!! \n")
+
+            except:
+                print("\n >> Error: Ingrese un valor numerico o seleccione una columna diferente a \'costo (dummy)\' !!! \n")
+
+        # Proceso: Validacion de tipo formato y seleccion de variable (ingresos, ventas, etc.)
+        while True:
+            try:
+                x = int(input('Ingrese numero de columna (ingresos, ventas, etc.): '))
+                if (x < 1) | (x > total):
+                    print("\n Indice incorrecto !!! \n")
+
+                else:
+                    type = data[columns[x - 1]].dtype
+                    if (type == "int64") | (type == "int") | (type == "float64") | (type == "float"):
+                        col_name.append(x)
+                        break
+
+                    else:
+                        print("\n >>> Error: Variable seleccionado no contiene un formato tipo: \'Numerico\' !!! \n")
+
+            except:
+                print("\n >> Error: Ingrese un valor numerico o seleccione una columna diferente a \'costo (dummy)\' !!! \n")
+                
+        # Proceso: Validacion de tipo formato y seleccion de costo
+        while True:
+            try:
+                x = int(input('Ingrese numero de columna (costo): '))
+                if (x < 1) | (x > total):
+                    print("\n Indice incorrecto !!! \n")
+  
+                elif x == total:
+                    col_name.append(x)
+                    break
+
+                else:
+                    type = data[columns[x - 1]].dtype
+                    if (type == "int64") | (type == "int") | (type == "float64") | (type == "float"):
+                        col_name.append(x)
+                        break
+
+                    else:
+                        print("\n >>> Error: Variable seleccionado no contiene un formato tipo: \'Numerico\' !!! \n")
+
+            except:
+                print("\n >> Error: Ingrese un valor numerico !!! \n")
+
+        col_var_hml = []
+        for index in col_name:
+            index -= 1
+            if index == (total - 1):
+                col_var_hml.append("N/A")
+
+            else:
+                col_var_hml.append(columns[index])
+
+        print("---"*20)
+
+        return col_var_hml
+
+    # Modulo: Determinar el valor porcentual de cada categoria HML
+    def select_percentage_hml(self):
+        print("\n >>> Determinacion del porcentaje - (HML) <<< \n")
+        perc_hml = {"h": 0, "m": 0, "l":0}
+        keys = list(perc_hml.keys())
+        cont = 0
+        # Proceso: Validacion del valor porcentual para cada categoria HML
+        while True:
+            try:
+                x = int(input('Ingrese un porcentaje entero ({}): '.format(keys[cont])))
+                perc_hml[keys[cont]] = x
+                cont += 1
+                if cont == len(keys):
+                    break
+
+            except:
+                print("\n >> Error: Ingrese un valor numerico tipo entero !!! \n")
+
+        print("---"*20)
+
+        return perc_hml
+    
+    # Modulo: Determinar periodos forecast (MA) y forecast (modelos)
+    def select_period_fsct(self):
+        print("\n >>> Determinacion de periodos de prediccion - (Forecast MA y Modelos) <<< \n")
+        # Proceso: Validacion del valor porcentual para cada categoria HML
+        period_fsct = 0
+        while True:
+            try:
+                x = int(input('Ingrese un periodo: '))
+                period_fsct = x
+                if period_fsct > 0:
+                    break
+
+                else:
+                    print("\n Periodo invalido. Ingrese un periodo mayor a cero !! \n")
+
+            except:
+                print("\n >> Error: Ingrese un valor numerico tipo entero !!! \n")
+
+        print("---"*20)
+
+        return period_fsct
 
     # Modulo: Determinacion de la granularidad de los datos
     def select_gran_data(self, data):
@@ -751,7 +933,6 @@ class Functions():
         # Pivoteo en base al parseo del año/mes sobre las identificadores y sumatoria de los ingresos
         data = data.pivot(index = "label", columns = name_col, values = 'revenue').reset_index().fillna(0)
         data_xyz = self.get_data_XYZ(data.copy())
-        print(data.shape)
 
         # Computo del total de los ingresos
         data['total'] = data.iloc[:, 1:].sum(axis =  1, numeric_only = True)
@@ -883,10 +1064,15 @@ class Functions():
 
     # Modulo: Generacion de las caracteristicas del clasificador ABC y XYZ
     def get_detail_abc(self, data):
-        grouped_abc = data.groupby(['granularity', 'category_abc']).agg(count_abc = ('label', 'count'), count_label = ('label', 'nunique'), total_revenue = ('total_revenue', 'sum')).reset_index()
+        grouped_abc = data.groupby(['granularity', 'category_abc']).agg(count_abc = ('label', 'count'), 
+                                                                        count_label = ('label', 'nunique'), 
+                                                                        total_revenue = ('total_revenue', 'sum')).reset_index()
         grouped_abc["%_rev"] =  grouped_abc.groupby(["granularity"])["total_revenue"].apply(lambda x:  round(100 * (x / x.sum()))).reset_index(drop = True)
         grouped_abc["%_abc"] =  grouped_abc.groupby(["granularity"])["count_abc"].apply(lambda x:  round(100 * (x / x.sum()))).reset_index(drop = True)
         grouped_abc['%_rank'] = round((grouped_abc['count_label'] / grouped_abc['count_label'].sum()) * 100, 2)
+        #grouped_abc['rank_values'] = grouped_abc.groupby(["granularity", "count_label"])['count_label'].apply(lambda x:  x.sum()).reset_index(drop = True)
+        grouped_abc.rename(columns = {"count_label": "rank"}, inplace = True)
+        grouped_abc.drop("count_abc", axis = 1, inplace = True)
 
         grouped_xyz = data.groupby(['granularity', 'category_xyz']).agg(count_xyz = ('label', 'count')).reset_index()
         grouped_xyz["%_xyz"] =  grouped_xyz.groupby(["granularity"])["count_xyz"].apply(lambda x:  round(100 * (x / x.sum()))).reset_index(drop = True)
@@ -895,14 +1081,39 @@ class Functions():
         #grouped_rank["total"] =  grouped_rank.groupby(["granularity"])["total_sales"].apply(lambda x:  round(100 * (x / x.sum()))).reset_index(drop = True)
         #grouped_rank["%_rank"] = round(grouped_rank.count_rank / grouped_rank.total, 2) * 100
         #print(grouped_rank)
-        grouped = data.groupby(['granularity', 'category_abc']).agg(count_abc = ('label', 'count'), count_label = ('label', 'nunique'), total_revenue = ('total_revenue', 'sum')).reset_index()
+        grouped = data.groupby(['granularity', "label", 'category_abc']).agg(count_abc = ('label', 'count'), 
+                                                                    count_label = ('label', 'nunique'), 
+                                                                    total_revenue = ('total_revenue', 'sum')).reset_index()
+
         grouped = grouped.groupby(['granularity'])
+        rank = {"A": 20, "B": 50, "C": 100}
         for name, group in grouped:
-            #print(group)
-            total = group.count_label.sum()
-            print(group.count_label / total)
+            total = group.total_revenue.sum()
+            for key in group.category_abc.unique().tolist():
+                temp = group[group.category_abc == key]
+                #print(group.head())
+                #total = group.count_label.sum()
+                #print(group.count_label / total)
+
+                temp = temp.sort_values(['total_revenue'], ascending = False)
+                temp["percentage"] =  round((temp.total_revenue / total) * 100, 2)
+                temp["cumsum_perc"] = temp.percentage.cumsum()
+                temp.loc[temp.cumsum_perc > 100, "cumsum_perc"] = 100
+                #print(temp.tail(3))
+                #print(temp.shape)
+
+                """
+                if "A" == list(name)[-1]:
+                    print(len(temp[(temp.cumsum_perc >= 0) & (temp.cumsum_perc <= rank[key])]))
+
+                elif "B" == list(name)[-1]:
+                    print(len(temp[(temp.cumsum_perc > rank["A"]) & (temp.cumsum_perc <= rank[key])]))
+
+                else:
+                    print(len(temp[(temp.cumsum_perc > rank["B"]) & (temp.cumsum_perc <= rank[key])]))
+                """
             #break
-        print("--------------------------+++++++++++++++++++++++++++++++")
+        #print("--------------------------+++++++++++++++++++++++++++++++")
 
         #data = pd.merge(grouped_abc, grouped_xyz, how = "left", on = ["label"])
         data = pd.concat([grouped_abc, grouped_xyz.drop("granularity", axis = 1)], axis = 1, ignore_index = False)
@@ -1117,12 +1328,14 @@ class Functions():
         best_models = pd.DataFrame.from_dict(best_models)
         return best_models
 
+    # Modulo: Evaluacion y determinacion de metricas de estacionalidad
     def stationarity_check(self, TS):
         # Perform the Dickey Fuller Test
         dftest = adfuller(TS) # change the passengers column as required 
 
         # Print Dickey-Fuller test results
         #print ('Results of Dickey-Fuller Test:')
+        
 
         dfoutput = pd.Series(dftest[0:4], index = ['Test Statistic','p-value','#Lags Used','Number of Observations Used'])
         for key,value in dftest[4].items():
@@ -1131,7 +1344,7 @@ class Functions():
 
         return dfoutput
 
-    # Modulo:
+    # Modulo: Identificador de tipo y metricas para determinar la estacionalidad
     def get_graph_series_data(self, data, col_serie, period):
         dict_period = {"daily": 7, "week": 52, "month": 12}
         data = data.set_index(col_serie[0])
@@ -1154,7 +1367,7 @@ class Functions():
         # Evaluacion de metricas para determinar si la serie es mult o add
         if add["p-value"].round(4) == mult["p-value"].round(4):
             #print("opcion 1")
-            if acf_a > acf_m:
+            if acf_a < acf_m:
                 return [add["p-value"].round(4), acf_a, mult["p-value"].round(4), acf_m, "additive"], add_decomp
 
             else:
@@ -1167,6 +1380,61 @@ class Functions():
         else:
             #print("opcion 3")
             return [add["p-value"].round(4), acf_a, mult["p-value"].round(4), acf_m, "multiplicative"], mult_decomp
+
+    # Modulo: Validacion de intervalos de tiempo para el computo del fsct de medias moviles (MA)
+    def validate_data_serie_ma(self, data, col_serie, period, size_period):
+        end_date = data[col_serie[0]].max()
+        if period == "month":
+            days = 30 * size_period
+            start_date = end_date + relativedelta(days = -days)
+            data['month'] = data[col_serie[0]].dt.month
+
+        elif period == "week":
+            days = 7 * size_period
+            start_date = end_date + relativedelta(days = -days)
+            data_serie['week'] = data_serie[col_serie[0]].dt.isocalendar().week        
+
+        elif period == "daily":
+            days = size_period
+            start_date = end_date + relativedelta(days = -days)
+
+        data_serie = data[data[col_serie[0]] >= start_date]
+
+        if len(data_serie) < days:
+            #print("\n > La data contiene dias faltantes... \n")
+            # Determinar los intervalos
+            #start_date = data.fecha.min()
+            #end_date = datetime.date.today()
+            data_serie.drop_duplicates(col_serie[0], inplace = True)
+
+            # Generacion del dataframe de fechas y rellenado de los campos vacios con la variable observacion
+            data_serie.set_index(col_serie[0], inplace = True)
+            date_index = pd.date_range(start = start_date, end = end_date, freq = 'd')
+            #data_serie = data_serie.reindex(date_index, method = 'bfill')
+            data_serie = data_serie.reindex(date_index)
+            data_serie[col_serie[1]].fillna(0, inplace = True) 
+            data_serie.fillna(method = 'bfill', inplace = True)
+            data_serie = data_serie.reset_index().rename(columns = {'index': col_serie[0]})
+            data_serie[col_serie[0]] = pd.to_datetime(data_serie[col_serie[0]])
+
+        return data_serie
+
+    # Modulo: Generacion de los periodos (fechas) para la prediccion del fsct
+    def validate_data_serie_models(self, start_date, period, size_period):
+        if period == "month":
+            days = 30 * size_period
+            end_date = start_date + relativedelta(days = days)
+
+        elif period == "week":
+            days = 7 * size_period
+            end_date = start_date + relativedelta(days = days)
+
+        elif period == "daily":
+            days = size_period
+            end_date = start_date + relativedelta(days = days)
+
+        date_index = pd.date_range(start = start_date, end = end_date, freq = 'd')
+        return pd.DataFrame(date_index, columns = ['date'])
 
     # Modulo: Computo de tiempos sobre un proceso
     def get_time_process(self, seg):
