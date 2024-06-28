@@ -79,16 +79,23 @@ class Functions():
         files = self.get_files_names()
         if len(files) == 0:
             print(" >> Error: No existen archivos en la direccion: {}".format(self.path))
-            sys.exit()
+            #sys.exit()
+            raise NameError("error_file")
 
         print("\n >>> Selecione el archivo (CSV) analizar <<< \n")
         for idx, file in enumerate(files):
             print(" > {}.- {}".format(idx + 1, file.split(".")[0]))
 
+        print("\n > {} - salir de aplicacion\n".format(len(files) + 1))
+
+        total = len(files) + 1
         while True:
             try:
                 index = int(input('\n Ingrese el indice del archivo: '))
-                if (index > 0) & (index <= len(files)):
+                if index == total:
+                    raise NameError("exit")
+
+                elif (index > 0) & (index <= total):
                     index -= 1
                     name_file = files[index]
                     break
@@ -96,8 +103,13 @@ class Functions():
                 else:
                     print("\n Opcion invalida !! \n")
                     
-            except:
-                print("\n >> Error: Ingrese un valor numerico !!! \n")
+            except Exception as error:
+                error = str(error).replace('"','').replace("'","")
+                if error.find('exit') != -1:
+                    raise NameError("exit")
+                
+                else:
+                    print("\n >> Error: Ingrese un valor numerico !!! \n")
 
         print("---"*20)
 
@@ -447,6 +459,28 @@ class Functions():
         print("---"*20)
 
         return perc_hml
+    
+    # Modulo: Determinar periodos forecast (MA) y forecast (modelos)
+    def select_period_fsct(self):
+        print("\n >>> Determinacion de periodos de prediccion - (Forecast MA y Modelos) <<< \n")
+        # Proceso: Validacion del valor porcentual para cada categoria HML
+        period_fsct = 0
+        while True:
+            try:
+                x = int(input('Ingrese un periodo: '))
+                period_fsct = x
+                if period_fsct > 0:
+                    break
+
+                else:
+                    print("\n Periodo invalido. Ingrese un periodo mayor a cero !! \n")
+
+            except:
+                print("\n >> Error: Ingrese un valor numerico tipo entero !!! \n")
+
+        print("---"*20)
+
+        return period_fsct
 
     # Modulo: Determinacion de la granularidad de los datos
     def select_gran_data(self, data):

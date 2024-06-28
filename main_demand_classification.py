@@ -178,6 +178,22 @@ class Main_Demand_Series_Times():
 
         print("+*+*"*30)
 
+        period_fsct = self.functions.select_period_fsct()
+        print(" >> Periodo de prediccion: {} - {}\n".format(str(period_fsct).replace("[", "").replace("]", ""), "Mes(es)" if period == "month" else "Semana(s)"))
+        while True:            
+            validate = input('Las variables seleccionadas son correctas (y / n): ')
+            if validate.lower() == "y":
+                break
+            
+            elif (validate.lower() != "y") & (validate.lower() != "n"):
+                print("\n > Opcion invalida. Seleccione: y -> si o n -> no !!! \n")
+                
+            elif validate.lower() == "n":
+                period_fsct = self.functions.select_period_fsct()
+                print(" >> Periodo de prediccion: {} - {}\n".format(str(period_fsct).replace("[", "").replace("]", ""), "Mes(es)" if period == "month" else "Semana(s)"))
+
+        print("+*+*"*30)
+
         # Seleccion de las variables para filtrar la granularidad de los datos
         col_gran = self.functions.select_gran_data(data)
         print(" >> Granularidad seleccionada: {}\n".format(str(col_gran).replace("[", "").replace("]", "")))
@@ -195,7 +211,7 @@ class Main_Demand_Series_Times():
 
         print("+*+*"*30)
                 
-        return data, period, col_serie, col_obs_abc, col_obs_hml, perc_hml, col_gran, name_file.split(".")[0]
+        return data, period, col_serie, col_obs_abc, col_obs_hml, perc_hml, period_fsct, col_gran, name_file.split(".")[0]
 
     # Modulo: Analisis y generacion de los patrones de demanda para la viabilidad de clasificacion de observaciones
     def data_demand(self, data, period, col_serie, col_gran, name_file):
@@ -340,10 +356,10 @@ class Main_Demand_Series_Times():
         return data_frame_abc
 
     # Modulo: Entrenamiento, prediccion, validacion y seleccion del mejor modelo ajustado a la serie
-    #def model_training(self, data, data_demand, data_comp_seasonal, col_gran, col_serie, col_obs_abc, period, size_period):
-    def model_training(self, data, data_demand, col_gran, col_serie, col_obs_abc, period, size_period):
+    #def model_training(self, data, data_demand, data_comp_seasonal, col_gran, col_serie, col_obs_abc, period, period_fsct):
+    def model_training(self, data, data_demand, col_gran, col_serie, col_obs_abc, period, period_fsct):
         select_models = [0, 1, 2, 3, 4, 5 , 6, 7]
-        #select_models = [0, 1]
+        #select_models = [0, 5]
         data = self.functions.set_catgory_data(data.copy(), data_demand.copy(), col_gran)
         #data_comp_seasonal = pd.merge(data_comp_seasonal, data_demand[["label", "category_behavior", "flag_new"]], how = "left", on = 'label')
         #data_comp_seasonal = data_comp_seasonal[(data_comp_seasonal.flag_new != 1) | (data_comp_seasonal.category_behavior != "N/A")]
@@ -393,13 +409,13 @@ class Main_Demand_Series_Times():
                 print(name)
                 if 0 in select_models:
                     print("\n >>> Models: MA <<<")
-                    data_ma = self.model.get_model_ma(group.copy(), col_serie, period, size_period, function = self.functions)
+                    data_ma = self.model.get_model_ma(group.copy(), col_serie, period, period_fsct, function = self.functions)
                     data_fsct_ma = pd.concat([data_fsct_ma, data_ma], axis = 0, ignore_index = False)
 
                 if (1 in select_models) | (2 in select_models) | (3 in select_models):
                     print("\n >>> Models: statsForecast <<<")
                     start_time_model = time()
-                    data_metric, col_pred, data_fsct = self.model.get_models_statsForecast(group.copy(), col_serie, period, size_period)
+                    data_metric, col_pred, data_fsct = self.model.get_models_statsForecast(group.copy(), col_serie, period, period_fsct)
                     data_metric["label"] = list(name)[0]
                     end_time_model = time()
                     data_metric["seconds"] = round(end_time_model - start_time_model, 2)
@@ -415,7 +431,7 @@ class Main_Demand_Series_Times():
                 if 4 in select_models:
                     print("\n >>> Models: ARIMA <<<")
                     start_time_model = time()
-                    data_metric, data_fsct = self.model.get_model_Arima(group.copy(), col_serie, period, size_period)
+                    data_metric, data_fsct = self.model.get_model_Arima(group.copy(), col_serie, period, period_fsct)
                     data_metric["label"] = list(name)[0]
                     end_time_model = time()
                     data_metric["seconds"] = round(end_time_model - start_time_model, 2)
@@ -439,7 +455,7 @@ class Main_Demand_Series_Times():
                     print("\n >>> Models: Prophet <<<")
                     start_time_model = time()
                     #data_metric, data_fsct = self.model.get_model_prophet(group.copy(), col_serie = col_serie, period = period, type_seasonal = data_comp_seasonal[data_comp_seasonal.label == list(name)[0]].type_seasonal.values[0])
-                    data_metric, data_fsct = self.model.get_model_prophet(group.copy(), col_serie = col_serie, period = period, size_period = size_period)
+                    data_metric, data_fsct = self.model.get_model_prophet(group.copy(), col_serie = col_serie, period = period, period_fsct = period_fsct)
                     data_metric["label"] = list(name)[0]
                     end_time_model = time()
                     data_metric["seconds"] = round(end_time_model - start_time_model, 2)
@@ -466,8 +482,6 @@ class Main_Demand_Series_Times():
 
             print("\n >>> Modelos: LGBM - CatBoost <<< \n")
             for name, group in df_model_2.groupby(segment):
-                #if not name[0] in ["4546_94", "3198_94", "3631_94", "3861_94", "3055_94"]:
-                #   continue
                 print("+++"*30)
                 print(name)
                 if 6 in select_models:
@@ -483,7 +497,7 @@ class Main_Demand_Series_Times():
 
                     column = segment + col_serie + [col_obs_abc[0]]
                     dict_seg = {segment[0]: group[segment[0]].unique().tolist(), segment[1]: group[segment[1]].unique().tolist()}
-                    data_fsct = self.model.get_fsct_trees(data[column].copy(), dict_seg, model, period, size_period, "LGBM")
+                    data_fsct = self.model.get_fsct_trees(data[column].copy(), dict_seg, model, period, period_fsct, "LGBM")
                     data_fsct["granularity"] = "_".join(col_gran[:idx + 1])
                     data_fsct_models = pd.concat([data_fsct_models, data_fsct], axis = 0, ignore_index = False)
                 
@@ -500,7 +514,7 @@ class Main_Demand_Series_Times():
                     
                     column = segment + col_serie + [col_obs_abc[0]]
                     dict_seg = {segment[0]: group[segment[0]].unique().tolist(), segment[1]: group[segment[1]].unique().tolist()}
-                    data_fsct = self.model.get_fsct_trees(data[column].copy(), dict_seg, model, period, size_period, "CatBoost")
+                    data_fsct = self.model.get_fsct_trees(data[column].copy(), dict_seg, model, period, period_fsct, "CatBoost")
                     data_fsct["granularity"] = "_".join(col_gran[:idx + 1])
                     data_fsct_models = pd.concat([data_fsct_models, data_fsct], axis = 0, ignore_index = False)
 
@@ -681,7 +695,7 @@ class Main_Demand_Series_Times():
 
     def main(self):
         # Bandera de prueba
-        test = True
+        test = False
         try:
             start_time = time()
         
@@ -695,7 +709,7 @@ class Main_Demand_Series_Times():
             #source_data = 1
             # Extraccion de datos por archivo y seleccion de variables analizar
             if source_data == 1:
-                data, period, col_serie, col_obs_abc, col_obs_hml, perc_hml, col_gran, name_file = self.select_options()
+                data, period, col_serie, col_obs_abc, col_obs_hml, perc_hml, period_fsct, col_gran, name_file = self.select_options()
                 #pass
 
             # Extraccion de datos por base de datos (Fijar las variables analizar, si no aplicar el modulo "select_options")
@@ -714,26 +728,25 @@ class Main_Demand_Series_Times():
 
             #sys.exit()
             #print(period, col_serie, col_gran, name_file)
-            #source_data = 1
-            #period = "month" # week, month
-            #col_serie = ['fecha', 'sales']
-            #col_gran = ['dept_nbr', 'store_nbr'] #'dept_nbr', 'store_nbr'
-            #col_obs_abc = ['price', "sales"]
-            #col_obs_hml = ['price', "sales", "N/A"]
-            #perc_hml = {"h": 20, "m":30, "l":50}
-            #size_period = 3
+            source_data = 1
+            period = "month" # week, month
+            col_serie = ['fecha', 'sales']
+            col_gran = ['dept_nbr', 'store_nbr'] #'dept_nbr', 'store_nbr'
+            col_obs_abc = ['price', "sales"]
+            col_obs_hml = ['price', "sales", "N/A"]
+            perc_hml = {"h": 20, "m":30, "l":50}
+            period_fsct = 3
             #name_file = "data_Atom_agu_3.csv"
-            #name_file = "data_Atom_agu.csv"
+            name_file = "data_Atom_agu.csv"
             
-            #data = self.queries.get_data_file(name_file)
+            data = self.queries.get_data_file(name_file)
             data = data.dropna()
             #data[col_serie[0]] = pd.to_datetime(data[col_serie[0]], format = "%d/%m/%Y", dayfirst = True)
             #data[col_serie[0]] = data[col_serie[0]].apply(lambda x: pd.to_datetime(x).strftime("%Y-%m-%d"))
-            #data[col_serie[0]] = pd.to_datetime(data[col_serie[0]], format = "%Y-%m-%d")
+            data[col_serie[0]] = pd.to_datetime(data[col_serie[0]], format = "%Y-%m-%d")
             print(data.head())
             #name_file = "data_Atom_agu"
             print("*+*+"*30)
-            sys.exit()
 
             print("\n >>> Proceso: Clasificacion de los patrones de demanda <<<\n")
             # Proceso: Clasificación de los patrones de demanda
@@ -822,7 +835,7 @@ class Main_Demand_Series_Times():
             print("\n >> Proceso: Entrenamiento, validaciones y seleccion del mejor modelo <<<\n")
 
             # Proceso: Entrenamientos, validacion y generacion de metricas
-            data_metric, data_fsct_ma, data_fsct_models = self.model_training(data, data_final, col_gran, col_serie, col_obs_abc, period, size_period)
+            data_metric, data_fsct_ma, data_fsct_models = self.model_training(data, data_final, col_gran, col_serie, col_obs_abc, period, period_fsct)
             #data_metric = self.queries.get_data_file("result/data_Atom_agu/month/data_Atom_agu_metrics.csv")
 
             print("---"*20)
@@ -916,6 +929,9 @@ class Main_Demand_Series_Times():
             if error.find('exit') != -1:
                 print("\n >>>> Aplicacion Finalizada por el usuario !!!\n")
             
+            elif error.find("error_file") != -1:
+                print("\n >> Aplicacion Finalizada !!!\n")
+
             else:
                 print(traceback.format_exc())
         

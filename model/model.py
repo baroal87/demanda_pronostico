@@ -286,7 +286,7 @@ class Model_Series_Times():
 
         return data_metric, train_model
     
-    def get_fsct_trees(self, data, dict_seg, model, period, size_period, name_model):
+    def get_fsct_trees(self, data, dict_seg, model, period, period_fsct, name_model):
         # Proceso: Generacion de fsct en base a intevarlo de periodos determinados
         columns = data.columns.tolist()
         #print(columns)
@@ -295,18 +295,18 @@ class Model_Series_Times():
         behavior = dict_seg[segment[1]]
         data = data[(data[columns[0]].isin(label)) & (data[columns[1]].isin(behavior))]
         start_date = data[columns[2]].max()
-        data_serie = self.validate_data_serie_models(start_date, period, size_period)
+        data_serie = self.validate_data_serie_models(start_date, period, period_fsct)
         data_serie.rename(columns = {"date": columns[2]}, inplace = True)
         data_serie[columns[2]] = pd.to_datetime(data_serie[columns[2]])
         data_serie[segment[0]] = label[0]
 
         if period == "month":
-            #days = 30 * size_period
+            #days = 30 * period_fsct
             end_date = start_date + relativedelta(days = -30)
             data_serie['month'] = data_serie[columns[2]].dt.month
 
         elif period == "week":
-            #days = 7 * size_period
+            #days = 7 * period_fsct
             end_date = start_date + relativedelta(days = -15)
             data_serie['week'] = data_serie[columns[2]].dt.isocalendar().week
 
@@ -321,11 +321,11 @@ class Model_Series_Times():
         data_serie["fsct"] = data_serie["fsct"].round(2)
 
         fsct = data_serie["fsct"].values.tolist()
-        if len(fsct) > size_period:
-            fsct = fsct[-size_period:]
+        if len(fsct) > period_fsct:
+            fsct = fsct[-period_fsct:]
 
-        #data_fsct = self.get_data_fsct_model(data_serie[name_col_pred].values.tolist(), size_period, period, data.segment.unique().tolist()[0], "Arima")
-        data_fsct = self.get_data_fsct_model(fsct, size_period, period, data[columns[0]].unique().tolist()[0], data[columns[1]].unique().tolist()[0], name_model)
+        #data_fsct = self.get_data_fsct_model(data_serie[name_col_pred].values.tolist(), period_fsct, period, data.segment.unique().tolist()[0], "Arima")
+        data_fsct = self.get_data_fsct_model(fsct, period_fsct, period, data[columns[0]].unique().tolist()[0], data[columns[1]].unique().tolist()[0], name_model)
         #sys.exit()
 
         return data_fsct
@@ -431,7 +431,7 @@ class Model_Series_Times():
         return params_evaluated, results
 
     # Modulo: Modelo Prophet
-    def get_model_prophet(self, data, col_serie, period, size_period):
+    def get_model_prophet(self, data, col_serie, period, period_fsct):
         # Computo del indicador de filtracion
         data = data.dropna().reset_index(drop = True)
         total_data = len(data)
@@ -527,7 +527,7 @@ class Model_Series_Times():
         #print(test.head(20))
 
         # Proceso: Generacion de fsct en base a intevarlo de periodos determinados
-        data_serie = self.validate_data_serie_models(data[col_serie[0]].max(), period, size_period)
+        data_serie = self.validate_data_serie_models(data[col_serie[0]].max(), period, period_fsct)
         data_serie.rename(columns = {"date": col_serie[0]}, inplace = True)
         
         # diff_days -> El fsct debe contemplarse apartir de la ultima fecha del train_set (Se suman las fechas del test y las predicciones a futuro)
@@ -548,8 +548,8 @@ class Model_Series_Times():
         data_serie[name_col_pred] = data_serie[name_col_pred].abs()
 
         columns = data.columns.tolist()[:2]
-        #data_fsct = self.get_data_fsct_model(data_serie[name_col_pred].values.tolist(), size_period, period, data.segment.unique().tolist()[0], "Prophet")
-        data_fsct = self.get_data_fsct_model(data_serie[name_col_pred].values.tolist(), size_period, period, data[columns[0]].unique().tolist()[0], data[columns[1]].unique().tolist()[0], "Prophet")
+        #data_fsct = self.get_data_fsct_model(data_serie[name_col_pred].values.tolist(), period_fsct, period, data.segment.unique().tolist()[0], "Prophet")
+        data_fsct = self.get_data_fsct_model(data_serie[name_col_pred].values.tolist(), period_fsct, period, data[columns[0]].unique().tolist()[0], data[columns[1]].unique().tolist()[0], "Prophet")
         #print(data_fsct)
         #print("---"*30)
 
@@ -603,7 +603,7 @@ class Model_Series_Times():
         return best_cfg
 
     # Modulo: Modelo Auto Arima
-    def get_model_Arima(self, data, col_serie, period, size_period):
+    def get_model_Arima(self, data, col_serie, period, period_fsct):
         data = data.dropna().reset_index(drop = True)
         total_data = len(data)
         fill_data = int(round((total_data * 20) / 100))
@@ -676,7 +676,7 @@ class Model_Series_Times():
         #print(test.head(20))
         
         # Proceso: Generacion de fsct en base a intevarlo de periodos determinados
-        data_serie = self.validate_data_serie_models(data[col_serie[0]].max(), period, size_period)
+        data_serie = self.validate_data_serie_models(data[col_serie[0]].max(), period, period_fsct)
         data_serie.rename(columns = {"date": col_serie[0]}, inplace = True)
         #diff_days = (data_serie[col_serie[0]].max() - data_serie[col_serie[0]].min()).days
         pred = model_arima.forecast(len(data_serie))
@@ -695,8 +695,8 @@ class Model_Series_Times():
         #print("---"*30)
         
         columns = data.columns.tolist()[:2]
-        #data_fsct = self.get_data_fsct_model(data_serie[name_col_pred].values.tolist(), size_period, period, data.segment.unique().tolist()[0], "Arima")
-        data_fsct = self.get_data_fsct_model(data_serie[name_col_pred].values.tolist(), size_period, period, data[columns[0]].unique().tolist()[0], data[columns[1]].unique().tolist()[0], "Arima")
+        #data_fsct = self.get_data_fsct_model(data_serie[name_col_pred].values.tolist(), period_fsct, period, data.segment.unique().tolist()[0], "Arima")
+        data_fsct = self.get_data_fsct_model(data_serie[name_col_pred].values.tolist(), period_fsct, period, data[columns[0]].unique().tolist()[0], data[columns[1]].unique().tolist()[0], "Arima")
 
         return data_metric, data_fsct
 
@@ -797,7 +797,7 @@ class Model_Series_Times():
         return data_metric
 
     # Modulo: Modelos Arima, CostanClassic y CrostanSB
-    def get_models_statsForecast(self, data, var_obs, period, size_period):
+    def get_models_statsForecast(self, data, var_obs, period, period_fsct):
         data = data.dropna().reset_index(drop = True)
         name_col_transf = var_obs[1] + "_scaled"
         transformed, lam = boxcox(data[var_obs[1]])
@@ -906,7 +906,7 @@ class Model_Series_Times():
         #print("---"*30)
 
         # Proceso: Generacion de fsct en base a intevarlo de periodos determinados
-        data_serie = self.validate_data_serie_models(data["ds"].max(), period, size_period)
+        data_serie = self.validate_data_serie_models(data["ds"].max(), period, period_fsct)
         data_serie.rename(columns = {"date": "ds"}, inplace = True)
         data_serie["unique_id"] = data.segment.unique().tolist()[0]
         diff_days = (data_serie["ds"].max() - test["ds"].min()).days
@@ -933,7 +933,7 @@ class Model_Series_Times():
             data_serie[col] = data_serie[col].abs()
             data_serie[col] = data_serie[col].round(2)
 
-            temp = self.get_data_fsct_model(data_serie[col].values.tolist(), size_period, period, data[columns[0]].unique().tolist()[0], data[columns[1]].unique().tolist()[0], col)
+            temp = self.get_data_fsct_model(data_serie[col].values.tolist(), period_fsct, period, data[columns[0]].unique().tolist()[0], data[columns[1]].unique().tolist()[0], col)
             data_fsct = pd.concat([data_fsct, temp], axis = 0, ignore_index = False)
 
         data_metric = data_metric.reset_index(drop = True)
@@ -1151,18 +1151,18 @@ class Model_Series_Times():
         return ma
 
     # Modulo: Generacion de medias moviles
-    def get_model_ma(self, data, col_serie, period, size_period, function):
+    def get_model_ma(self, data, col_serie, period, period_fsct, function):
         data = data.dropna().reset_index(drop = True)
         data = data.sort_values([col_serie[0]], ascending = True).reset_index(drop = True)
-        data_serie = function.validate_data_serie_ma(data, col_serie, period, size_period)
+        data_serie = function.validate_data_serie_ma(data, col_serie, period, period_fsct)
         data_serie[period] = data_serie[period].astype(int)
         temp1 = data_serie.copy()
  
         data_serie = data_serie[col_serie].set_index([col_serie[0]])
         data_ma = self.get_ma(data_serie[col_serie[1]].values.tolist())
         #print(data_ma)
-        #limit = int(len(data_serie) / size_period)
-        limit = int(math.ceil(len(data_serie) / size_period))
+        #limit = int(len(data_serie) / period_fsct)
+        limit = int(math.ceil(len(data_serie) / period_fsct))
         columns = data.columns.tolist()[:2]
  
         df = pd.DataFrame()
@@ -1182,7 +1182,7 @@ class Model_Series_Times():
         #df.reset_index(drop = True, inplace = True)
         sales = []
         end_date = temp1[col_serie[0]].min()
-        for _ in range(size_period):
+        for _ in range(period_fsct):
             if period == "month":
                 start_date =  end_date + relativedelta(days = 30)
                 sales.append(round(temp1[(temp1[col_serie[0]] >= end_date) & (temp1[col_serie[0]] < start_date)][col_serie[1]].sum(), 2))
@@ -1195,10 +1195,10 @@ class Model_Series_Times():
        
         fsct = []
         while True:
-            r = round(sum(sales[len(fsct):]) / size_period, 2)
+            r = round(sum(sales[len(fsct):]) / period_fsct, 2)
             sales.append(r)
             fsct.append(r)
-            if size_period <= len(fsct):
+            if period_fsct <= len(fsct):
                 break
        
         temp = pd.DataFrame()
@@ -1215,26 +1215,26 @@ class Model_Series_Times():
         return df
     
     # Modulo: Generacion del intervalo de fechas forecast
-    def validate_data_serie_models(self, start_date, period, size_period):
+    def validate_data_serie_models(self, start_date, period, period_fsct):
         if period == "month":
-            days = 30 * size_period
+            days = 30 * period_fsct
             end_date = start_date + relativedelta(days = days)
 
         elif period == "week":
-            days = 7 * size_period
+            days = 7 * period_fsct
             end_date = start_date + relativedelta(days = days)
 
         elif period == "daily":
-            days = size_period
+            days = period_fsct
             end_date = start_date + relativedelta(days = days)
 
         date_index = pd.date_range(start = start_date, end = end_date, freq = 'd')
         return pd.DataFrame(date_index, columns = ['date'])
     
     # Modulo: Obtencion del fsct por cada modelo entrenado
-    #def get_data_fsct_model(self, fsct, size_period, period, name_segment, name_model):
-    def get_data_fsct_model(self, fsct, size_period, period, label, category_behavior, name_model):
-        limit = int(math.ceil(len(fsct) / size_period))
+    #def get_data_fsct_model(self, fsct, period_fsct, period, name_segment, name_model):
+    def get_data_fsct_model(self, fsct, period_fsct, period, label, category_behavior, name_model):
+        limit = int(math.ceil(len(fsct) / period_fsct))
 
         df = pd.DataFrame()
         fsct = [fsct[i: i + limit] for i in range(0, len(fsct), limit)]
