@@ -912,15 +912,9 @@ class Model_Series_Times():
         diff_days = (data_serie["ds"].max() - test["ds"].min()).days
         #horizon = len(test) + len(data_serie)
         forecasts = sf.forecast(h = diff_days, fitted = True)
-        print(forecasts.tail())
-        print("--------------------------")
-        print(data_serie.head())
-        print("--------------------------")
 
         data_serie = pd.merge(data_serie, forecasts, how = "left", on = ["unique_id", "ds"])
-        data_serie = data_serie.dropna().reset_index(drop = True)
-        print(data_serie)
-        
+        data_serie = data_serie.dropna().reset_index(drop = True)        
         columns = data.columns.tolist()[:2]
         for col in col_pred:
             if flag_boxcox:
