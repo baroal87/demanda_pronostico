@@ -350,8 +350,8 @@ class Main_Demand_Series_Times():
     # Modulo: Entrenamiento, prediccion, validacion y seleccion del mejor modelo ajustado a la serie
     #def model_training(self, data, data_demand, data_comp_seasonal, col_gran, col_serie, col_obs_abc, period, period_fsct):
     def model_training(self, data, data_demand, col_gran, col_serie, col_obs_abc, period, period_fsct):
-        select_models = [0, 1, 2, 3, 4, 5 , 6, 7]
-        #select_models = [0, 5]
+        select_models = [0, 1, 2, 3, 4, 5 , 6, 7, 8, 9, 10]
+        select_models = [0, 8]
         data = self.functions.set_catgory_data(data.copy(), data_demand.copy(), col_gran)
         #data_comp_seasonal = pd.merge(data_comp_seasonal, data_demand[["label", "category_behavior", "flag_new"]], how = "left", on = 'label')
         #data_comp_seasonal = data_comp_seasonal[(data_comp_seasonal.flag_new != 1) | (data_comp_seasonal.category_behavior != "N/A")]
@@ -458,6 +458,51 @@ class Main_Demand_Series_Times():
                     data_fsct["granularity"] = "_".join(col_gran[:idx + 1])
                     data_fsct_models = pd.concat([data_fsct_models, data_fsct], axis = 0, ignore_index = False)
 
+                if 6 in select_models:
+                    print("\n >>> Models: Single Exponential Smoothing <<<\n")
+                    start_time_model = time()
+                    #data_metric, data_fsct = self.model.get_model_prophet(group.copy(), col_serie = col_serie, period = period, type_seasonal = data_comp_seasonal[data_comp_seasonal.label == list(name)[0]].type_seasonal.values[0])
+                    data_metric, data_fsct = self.model.get_model_ses(group.copy(), col_serie = col_serie, period = period, period_fsct = period_fsct)
+                    data_metric["label"] = list(name)[0]
+                    end_time_model = time()
+                    data_metric["seconds"] = round(end_time_model - start_time_model, 2)
+                    data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
+                    metric_name = str(list(name)[0]) + "-SES"
+                    data_frame_metric[metric_name] = data_metric
+
+                    data_fsct["granularity"] = "_".join(col_gran[:idx + 1])
+                    data_fsct_models = pd.concat([data_fsct_models, data_fsct], axis = 0, ignore_index = False)
+
+                if 7 in select_models:
+                    print("\n >>> Models: Holt Exponential Smoothing <<<\n")
+                    start_time_model = time()
+                    #data_metric, data_fsct = self.model.get_model_prophet(group.copy(), col_serie = col_serie, period = period, type_seasonal = data_comp_seasonal[data_comp_seasonal.label == list(name)[0]].type_seasonal.values[0])
+                    data_metric, data_fsct = self.model.get_model_hes(group.copy(), col_serie = col_serie, period = period, period_fsct = period_fsct)
+                    data_metric["label"] = list(name)[0]
+                    end_time_model = time()
+                    data_metric["seconds"] = round(end_time_model - start_time_model, 2)
+                    data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
+                    metric_name = str(list(name)[0]) + "-HOLT"
+                    data_frame_metric[metric_name] = data_metric
+
+                    data_fsct["granularity"] = "_".join(col_gran[:idx + 1])
+                    data_fsct_models = pd.concat([data_fsct_models, data_fsct], axis = 0, ignore_index = False)
+
+                if 8 in select_models:
+                    print("\n >>> Models: Holt Winter Exponential Smoothing <<<\n")
+                    start_time_model = time()
+                    #data_metric, data_fsct = self.model.get_model_prophet(group.copy(), col_serie = col_serie, period = period, type_seasonal = data_comp_seasonal[data_comp_seasonal.label == list(name)[0]].type_seasonal.values[0])
+                    data_metric, data_fsct = self.model.get_model_hes(group.copy(), col_serie = col_serie, period = period, period_fsct = period_fsct)
+                    data_metric["label"] = list(name)[0]
+                    end_time_model = time()
+                    data_metric["seconds"] = round(end_time_model - start_time_model, 2)
+                    data_metric["full_time"] = self.functions.get_time_process(round(end_time_model - start_time_model, 2))
+                    metric_name = str(list(name)[0]) + "-HWEP"
+                    data_frame_metric[metric_name] = data_metric
+
+                    data_fsct["granularity"] = "_".join(col_gran[:idx + 1])
+                    data_fsct_models = pd.concat([data_fsct_models, data_fsct], axis = 0, ignore_index = False)
+
                 #self.model.get_model_forecasters(group, self.col_serie)
                 #break
 
@@ -476,7 +521,7 @@ class Main_Demand_Series_Times():
             for name, group in df_model_2.groupby(segment):
                 print("+++"*30)
                 print(name)
-                if 6 in select_models:
+                if 9 in select_models:
                     print("\n >>> Models: LGBM <<<")
                     start_time_model = time()
                     data_metric, model = self.model.get_model_LGBM(group.copy(), columns_num, columns_cat, col_pred = col_serie[1])
@@ -493,7 +538,7 @@ class Main_Demand_Series_Times():
                     data_fsct["granularity"] = "_".join(col_gran[:idx + 1])
                     data_fsct_models = pd.concat([data_fsct_models, data_fsct], axis = 0, ignore_index = False)
                 
-                if 7 in select_models:
+                if 10 in select_models:
                     print("\n >>> Models: CatBoost <<<")
                     start_time_model = time()
                     data_metric, model = self.model.get_model_CatBoost(group.copy(), columns_num, columns_cat, col_pred = col_serie[1])
@@ -511,7 +556,7 @@ class Main_Demand_Series_Times():
                     data_fsct_models = pd.concat([data_fsct_models, data_fsct], axis = 0, ignore_index = False)
 
                 #break
-            #break
+            break
 
         data_fsct_ma = data_fsct_ma.reset_index(drop = True)
         data_fsct_models = data_fsct_models.reset_index(drop = True)
@@ -687,7 +732,7 @@ class Main_Demand_Series_Times():
 
     def main(self):
         # Bandera de prueba
-        test = False
+        test = True
         try:
             start_time = time()
         
@@ -697,12 +742,12 @@ class Main_Demand_Series_Times():
             self.model = Model_Series_Times(self.path, test)
 
             # Seleccion del tipo de fuente para la extraccion de los datos
-            source_data = self.functions.select_source_data()
-            #source_data = 1
+            #source_data = self.functions.select_source_data()
+            source_data = 1
             # Extraccion de datos por archivo y seleccion de variables analizar
             if source_data == 1:
-                data, period, col_serie, col_obs_abc, col_obs_hml, perc_hml, period_fsct, col_gran, name_file = self.select_options()
-                #pass
+                #data, period, col_serie, col_obs_abc, col_obs_hml, perc_hml, period_fsct, col_gran, name_file = self.select_options()
+                pass
 
             # Extraccion de datos por base de datos (Fijar las variables analizar, si no aplicar el modulo "select_options")
             elif source_data == 2:
@@ -847,6 +892,7 @@ class Main_Demand_Series_Times():
             #data_fsct_models.to_csv("/home/baroal/Documentos/softtek/demanda_pronostico/source/predicts.csv", index = False)
             print("\n > Volumen: ", data_fsct_models.shape)
             print("---"*20)
+            sys.exit()
 
             # Proceso: Seleccion de los modelos predominantes
             best_models = self.functions.get_evaluate_model(data_metric)

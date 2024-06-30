@@ -25,6 +25,9 @@ from skforecast.ForecasterAutoreg import ForecasterAutoreg
 from skforecast.model_selection import grid_search_forecaster
 from skforecast.model_selection import backtesting_forecaster
 
+#import statsmodels.api as sm
+from statsmodels.tsa.api import ExponentialSmoothing, SimpleExpSmoothing, Holt
+
 #### Metricas ####
 from sklearn.preprocessing import StandardScaler, OneHotEncoder, LabelEncoder, OrdinalEncoder, MinMaxScaler, PowerTransformer
 from sklearn.compose import ColumnTransformer
@@ -42,6 +45,9 @@ from scipy.stats import uniform
 
 from mango import scheduler, Tuner
 import bottleneck as bn
+
+from statsmodels.tsa.stattools import adfuller
+from pmdarima.utils import diff_inv
 
 #from gluonts.dataset.common import ListDataset
 #from gluonts.torch.model.deepar import DeepAREstimator
@@ -155,6 +161,32 @@ class Model_Series_Times():
             data_dummy = pd.DataFrame(self.scale.fit_transform(data_dummy[categorical_features]), columns = self.scale.get_feature_names_out())
 
             return data_dummy
+
+    # Modulo: Identiciacion de estacionalidad
+    def get_validate_seasonal_data(self, data, col_serie):
+        flag = False
+        result = adfuller(data[col_serie[1]].dropna())
+
+        if result[1] > 0.05:
+            print(" > ADF Statistic: %f" % result[0])
+            print(" > P-value: %f" % result[1])
+
+            data_dif = data[col_serie[1]].diff()
+            name_col = col_serie[1] + "_diff"
+            data[name_col] = data_dif
+            flag = True
+
+        return data, flag
+    
+    # Modulo: Proceso de transformacion inversa de la diferecciacion estacional
+    def inv_diff(df_orig, df_diff, periods):
+        # Tranformacion n values(n = periods) de los valores originales y los valores diff en base a los periodos de diff
+        value = np.array(df_orig[: periods].tolist() + df_diff[periods: ].tolist())
+
+        # Obtencion de la inversion
+        inv_diff_vals = diff_inv(value, periods,1 )[periods:]
+
+        return inv_diff_vals
 
     # Modulo: Busqueda de hyperparametros
     def hyperparameters(self, X_train, Y_train, numeric_features, categorical_features, type_model = "LGBM"):
@@ -410,17 +442,17 @@ class Model_Series_Times():
         results = []
         for params in params_grid:
             try:
-                global train, test
+                global train, test, name_col_transf, col_serie
                 model = Prophet(**params)
-                model.fit(train[["fecha", "sales_scaled"]].rename(columns = {"fecha": "ds", "sales_scaled": "y"}))
-                diff_days = (test["fecha"].max() - test["fecha"].min()).days
+                model.fit(train[[col_serie[0], name_col_transf]].rename(columns = {col_serie[0]: "ds", name_col_transf: "y"}))
+                diff_days = (test[col_serie[0]].max() - test[col_serie[0]].min()).days
                 future = model.make_future_dataframe(periods = diff_days, freq = 'D')
                 future_data['cap'] = 6
                 forecast = model.predict(future)
                 future_data = forecast.tail(diff_days)
 
                 #error = mape(test['sales'], future_data['yhat'])
-                error = mean_absolute_percentage_error(test['sales'], future_data['yhat'])
+                error = mean_absolute_percentage_error(test[col_serie[1]], future_data['yhat'])
                 params_evaluated.append(params)
                 results.append(error)
 
@@ -1208,6 +1240,414 @@ class Model_Series_Times():
  
         return df
     
+    # Modulo:
+    def params_Exp_Smoot(self):
+        if self.type_model == "ses":
+            params_grid = dict(initialization_method = ['estimated', 'heuristic', 'legacy-heuristic'],
+                               # Fit
+                               smoothing_level = [0.1, 0.2, 0.3, 0.5, 0.7, 0.8],
+                               #use_boxcox = [True, "log"],
+                               optimized = [True, False])
+            
+        elif self.type_model == "hes":
+            params_grid = dict(initialization_method = ['estimated', 'heuristic', 'legacy-heuristic'],
+                               exponential = [True, False],
+                               damped_trend = [True, False],
+                               # Fit
+                               smoothing_level = [0.1, 0.2, 0.3, 0.5, 0.7, 0.8],
+                               smoothing_trend = [0.2, 0.4, 0.6, 0.8],
+                               optimized = [True, False])
+
+        else:
+            params_grid = dict(initialization_method = ['estimated', 'heuristic', 'legacy-heuristic'],
+                               exponential = [True, False],
+                               damped_trend = [True, False],
+                               trend = ['add', "mul", "additive", "multiplicative"],
+                               seasonal = ['add', "mul", "additive", "multiplicative"],
+                               use_boxcox = [True, False, "log"],
+                               # Fit
+                               smoothing_level = [0.1, 0.2, 0.3, 0.5, 0.7, 0.8],
+                               smoothing_trend = [0.2, 0.4, 0.6, 0.8],
+                               smoothing_seasonal = [0.1, 0.2, 0.3, 0.4, 0.5],
+                               optimized = [True, False])
+
+        grid = ParameterGrid(params_grid)
+        cnt = 0
+        for _ in grid:
+            cnt += 1
+        print(' >> Total Models: ', cnt)
+        
+        return params_grid
+
+    # Modulo: Busqueda de los hyperparametros
+    def get_hyperparameters_exp_smoot(self, params_grid):
+        params_evaluated = []
+        results = []
+        for params in params_grid:
+            name_col_pred = self.obs + "_pred"
+
+            if self.type_model == "ses":
+                model = SimpleExpSmoothing(self.train_df[self.col_transf], initialization_method = params["initialization_method"])
+                model_exp_smoot = model.fit(smoothing_level = params["smoothing_level"], optimized = params["optimized"])
+
+            elif self.type_model == "hes":
+                #model = Holt(self.train_df[self.col_transf], initialization_method = params["initialization_method"], exponential = params["exponential"], damped_trend = params["damped_trend"])
+                model = Holt(self.train_df[self.col_transf], initialization_method = params["initialization_method"])
+                model_exp_smoot = model.fit(smoothing_level = params["smoothing_level"], smoothing_trend = params["smoothing_trend"], optimized = params["optimized"])
+
+            else:
+                model = ExponentialSmoothing(self.train_df[self.col_transf], initialization_method = params["initialization_method"], trend = params["trend"], seasonal = params["seasonal"], use_boxcox = params["use_boxcox"])
+                model_exp_smoot = model.fit(smoothing_level = params["smoothing_level"], smoothing_trend = params["smoothing_trend"], smoothing_seasonal = params["smoothing_seasonal"], optimized = params["optimized"])
+
+            pred = model_exp_smoot.forecast(len(self.test_df))
+            self.test_df[name_col_pred] = pred.tolist()
+            if self.flag_boxcox:
+                self.test_df[name_col_pred] = inv_boxcox(self.test_df[name_col_pred], self.lam)
+                
+            else:
+                self.test_df[name_col_pred] = self.minMaxScaler.inverse_transform(self.test_df[[name_col_pred]])
+
+            error = mean_absolute_percentage_error(self.test_df[self.obs], self.test_df[name_col_pred])
+            params_evaluated.append(params)
+            results.append(error)
+
+            self.test_df.drop(name_col_pred, axis = 1, inplace = True)
+
+        return params_evaluated, results
+
+    # Modulo: Modelo Single Exponential Smoothing
+    def get_model_ses(self, data, col_serie, period, period_fsct):
+        """
+        - Metodo de series de tiempo para datos univariantes sin tendencia ni estacionalidad donde
+          requiere un unico parametro, denominado alfa (factor de suavizacion o coeficiente de suavizacion)
+        """
+        #data, flag_seasonal = self.get_validate_seasonal_data(data, col_serie)
+        #if flag_seasonal:
+        #    data.rename(columns = {col_serie[1]: col_serie[1] + "_orig", col_serie[1] + "_diff": col_serie[1]}, inplace = True)
+
+        data = data.dropna().reset_index(drop = True)
+        data = data.sort_values(col_serie[0], ascending = True)
+        total_data = len(data)
+        fill_data = int(round((total_data * 20) / 100))
+
+        train = data.loc[:fill_data]
+        name_col_transf = col_serie[1] + "_scaled"
+        self.col_transf = name_col_transf
+        transformed, self.lam = boxcox(train[col_serie[1]])
+        self.flag_boxcox = False
+        if self.lam < -5:
+            train[name_col_transf], lam = boxcox(train[col_serie[1]])
+            #train[name_col_transf] = self.scaler.fit_transform(train[name_col_transf])
+            self.flag_boxcox = True
+            
+        else:
+            train[name_col_transf] = self.minMaxScaler.fit_transform(train[[col_serie[1]]])
+
+        #train = train[[col_serie[0], col_serie[1]]].set_index([col_serie[0]])
+        train = train[[col_serie[0], name_col_transf]].set_index([col_serie[0]])
+        self.train_df = train.copy()
+
+        test = data.loc[fill_data:]
+        test = test[[col_serie[0], col_serie[1]]]
+        self.test_df = test.copy()
+
+        # Proceso de hyperparametria
+        conf_Dict = dict()
+        conf_Dict['initial_random'] = 10
+        conf_Dict['num_iteration'] = 50
+
+        self.obs = col_serie[1]
+        params_grid = self.params_Exp_Smoot()
+        tuner = Tuner(params_grid, self.get_hyperparameters_exp_smoot, conf_Dict)
+        results = tuner.minimize()
+        params = results['best_params']
+        print(' >> Seleccion del mejor parametro: ', params)
+        print(' >> Mejor error: ', results['best_objective'])
+
+        # Perform simple exponential smoothing
+        model = SimpleExpSmoothing(train[name_col_transf], initialization_method = params["initialization_method"])
+        ses_model = model.fit(smoothing_level = params["smoothing_level"], optimized = params["optimized"])
+        #pred = ses_model.fittedvalues
+        pred = ses_model.forecast(len(test))
+
+        name_col_real = col_serie[1] + "_real"
+        name_col_pred = col_serie[1] + "_pred"
+        test[name_col_pred] = pred.tolist()
+
+        if self.flag_boxcox:
+            test[name_col_pred] = inv_boxcox(test[name_col_pred], self.lam)
+            
+        else:
+            test[name_col_pred] = self.minMaxScaler.inverse_transform(test[[name_col_pred]])
+
+        test[name_col_pred] = test[name_col_pred].round(2)
+        test.rename(columns = {col_serie[1]: name_col_real}, inplace = True)
+        
+        test["accuracy"] = self.forecast_accuracy(test[name_col_real], test[name_col_pred])
+        test.loc[test["accuracy"].isnull(), "accuracy"] = 0
+        test["accuracy"] = test["accuracy"].round(2)
+        mae, rmse, mape, acc = self.get_metrics_pred(test, name_col_real, name_col_pred)
+        
+        coef_det = r2_score(test[name_col_real], test[name_col_pred], multioutput = 'variance_weighted')
+        if coef_det < 0:
+            coef_det = abs(coef_det)
+
+        data_metric = pd.DataFrame()
+        data_metric["mae"] = [mae]
+        data_metric["rmse"] = [rmse]
+        data_metric["mape"] = [mape]
+        data_metric["acc"] = [acc]
+        data_metric["r2"] = [round(coef_det, 2)]
+
+        print(test.head())
+        print("---"*30)
+
+        # Proceso: Generacion de fsct en base a intevarlo de periodos determinados
+        data_serie = self.validate_data_serie_models(data[col_serie[0]].max(), period, period_fsct)
+        data_serie.rename(columns = {"date": col_serie[0]}, inplace = True)
+        
+        # diff_days -> El fsct debe contemplarse apartir de la ultima fecha del train_set (Se suman las fechas del test y las predicciones a futuro)
+        #diff_days = (data_serie[col_serie[0]].max() - test[col_serie[0]].min()).days
+        pred = ses_model.forecast(len(data_serie))
+        data_serie[name_col_pred] = pred.tolist()
+        
+        if self.flag_boxcox:
+            data_serie[name_col_pred] = inv_boxcox(data_serie[name_col_pred], self.lam)
+
+        else:
+            data_serie[name_col_pred] = self.minMaxScaler.inverse_transform(data_serie[[name_col_pred]])
+
+        data_serie[name_col_pred] = data_serie[name_col_pred].round(2)
+        data_serie[name_col_pred] = data_serie[name_col_pred].abs()
+
+        columns = data.columns.tolist()[:2]
+        #data_fsct = self.get_data_fsct_model(data_serie[name_col_pred].values.tolist(), period_fsct, period, data.segment.unique().tolist()[0], "Prophet")
+        data_fsct = self.get_data_fsct_model(data_serie[name_col_pred].values.tolist(), period_fsct, period, data[columns[0]].unique().tolist()[0], data[columns[1]].unique().tolist()[0], "SES")
+        print(data_fsct)
+        print("---"*30)
+
+        return data_metric, data_fsct
+
+    # Modulo: Modelo Holt Exponential Smoothing (Double)
+    def get_model_hes(self, data, col_serie, period, period_fsct):
+        """
+        - Explícitamente para tendencias en series de tiempo univariantes
+        - Ademas del parámetro alfa para controlar el factor de suavizado del nivel, integra un factor de suavizado adicional 
+          controlando el decaimiento de influencia del cambio de tendencia denominado beta
+        - El método admite tendencias: aditiva (tendencia lineal) y multiplicativa (tendencia exponencial)
+        """
+        data = data.dropna().reset_index(drop = True)
+        data = data.sort_values(col_serie[0], ascending = True)
+        total_data = len(data)
+        fill_data = int(round((total_data * 20) / 100))
+
+        train = data.loc[:fill_data]
+        name_col_transf = col_serie[1] + "_scaled"
+        self.col_transf = name_col_transf
+        transformed, self.lam = boxcox(train[col_serie[1]])
+        self.flag_boxcox = False
+        if self.lam < -5:
+            train[name_col_transf], lam = boxcox(train[col_serie[1]])
+            self.flag_boxcox = True
+            
+        else:
+            train[name_col_transf] = self.minMaxScaler.fit_transform(train[[col_serie[1]]])
+
+        train = train[[col_serie[0], name_col_transf]].set_index([col_serie[0]])
+        self.train_df = train.copy()
+
+        test = data.loc[fill_data:]
+        test = test[[col_serie[0], col_serie[1]]]
+        self.test_df = test.copy()
+
+        # Proceso de hyperparametria
+        conf_Dict = dict()
+        conf_Dict['initial_random'] = 10
+        conf_Dict['num_iteration'] = 50
+
+        self.obs = col_serie[1]
+        self.type_model = "hes"
+        params_grid = self.params_Exp_Smoot()
+        tuner = Tuner(params_grid, self.get_hyperparameters_exp_smoot, conf_Dict)
+        results = tuner.minimize()
+        params = results['best_params']
+        print(' >> Seleccion del mejor parametro: ', params)
+        print(' >> Mejor error: ', results['best_objective'])
+
+        # Perform simple exponential smoothing
+        model = Holt(self.train_df[self.col_transf], initialization_method = params["initialization_method"], damped_trend = params["damped_trend"])
+        model_hes = model.fit(smoothing_level = params["smoothing_level"], smoothing_trend = params["smoothing_trend"], optimized = params["optimized"])
+        #pred = ses_model.fittedvalues
+        pred = model_hes.forecast(len(test))
+
+        name_col_real = col_serie[1] + "_real"
+        name_col_pred = col_serie[1] + "_pred"
+        test[name_col_pred] = pred.tolist()
+
+        if self.flag_boxcox:
+            test[name_col_pred] = inv_boxcox(test[name_col_pred], self.lam)
+            
+        else:
+            test[name_col_pred] = self.minMaxScaler.inverse_transform(test[[name_col_pred]])
+
+        test[name_col_pred] = test[name_col_pred].round(2)
+        test.rename(columns = {col_serie[1]: name_col_real}, inplace = True)
+        
+        test["accuracy"] = self.forecast_accuracy(test[name_col_real], test[name_col_pred])
+        test.loc[test["accuracy"].isnull(), "accuracy"] = 0
+        test["accuracy"] = test["accuracy"].round(2)
+        mae, rmse, mape, acc = self.get_metrics_pred(test, name_col_real, name_col_pred)
+        
+        coef_det = r2_score(test[name_col_real], test[name_col_pred], multioutput = 'variance_weighted')
+        if coef_det < 0:
+            coef_det = abs(coef_det)
+
+        data_metric = pd.DataFrame()
+        data_metric["mae"] = [mae]
+        data_metric["rmse"] = [rmse]
+        data_metric["mape"] = [mape]
+        data_metric["acc"] = [acc]
+        data_metric["r2"] = [round(coef_det, 2)]
+
+        print(test.head())
+        print("---"*30)
+
+        # Proceso: Generacion de fsct en base a intevarlo de periodos determinados
+        data_serie = self.validate_data_serie_models(data[col_serie[0]].max(), period, period_fsct)
+        data_serie.rename(columns = {"date": col_serie[0]}, inplace = True)
+        
+        # diff_days -> El fsct debe contemplarse apartir de la ultima fecha del train_set (Se suman las fechas del test y las predicciones a futuro)
+        #diff_days = (data_serie[col_serie[0]].max() - test[col_serie[0]].min()).days
+        pred = model_hes.forecast(len(data_serie))
+        data_serie[name_col_pred] = pred.tolist()
+        
+        if self.flag_boxcox:
+            data_serie[name_col_pred] = inv_boxcox(data_serie[name_col_pred], self.lam)
+
+        else:
+            data_serie[name_col_pred] = self.minMaxScaler.inverse_transform(data_serie[[name_col_pred]])
+
+        data_serie[name_col_pred] = data_serie[name_col_pred].round(2)
+        data_serie[name_col_pred] = data_serie[name_col_pred].abs()
+
+        columns = data.columns.tolist()[:2]
+        #data_fsct = self.get_data_fsct_model(data_serie[name_col_pred].values.tolist(), period_fsct, period, data.segment.unique().tolist()[0], "Prophet")
+        data_fsct = self.get_data_fsct_model(data_serie[name_col_pred].values.tolist(), period_fsct, period, data[columns[0]].unique().tolist()[0], data[columns[1]].unique().tolist()[0], "HOLT")
+        print(data_fsct)
+        print("---"*30)
+
+        return data_metric, data_fsct
+
+    # Modulo: Modelo Holt Winter Exponential Smoothing (Triple)
+    def get_model_hwes(self, data, col_serie, period, period_fsct):
+        """
+        - Explícitamente para tendencias en series de tiempo univariantes
+        - Ademas de los factores de suavizado alfa y beta, integra un nuevo parametro gamma que controla la influencia sobre 
+          el componente estacional
+        - El método admite tendencias: aditiva (tendencia lineal) y multiplicativa (tendencia exponencial)
+        """
+        data = data.dropna().reset_index(drop = True)
+        data = data.sort_values(col_serie[0], ascending = True)
+        total_data = len(data)
+        fill_data = int(round((total_data * 20) / 100))
+
+        train = data.loc[:fill_data]
+        name_col_transf = col_serie[1] + "_scaled"
+        self.col_transf = name_col_transf
+        transformed, self.lam = boxcox(train[col_serie[1]])
+        self.flag_boxcox = False
+        if self.lam < -5:
+            train[name_col_transf], lam = boxcox(train[col_serie[1]])
+            self.flag_boxcox = True
+            
+        else:
+            train[name_col_transf] = self.minMaxScaler.fit_transform(train[[col_serie[1]]])
+
+        train = train[[col_serie[0], name_col_transf]].set_index([col_serie[0]])
+        self.train_df = train.copy()
+
+        test = data.loc[fill_data:]
+        test = test[[col_serie[0], col_serie[1]]]
+        self.test_df = test.copy()
+
+        # Proceso de hyperparametria
+        conf_Dict = dict()
+        conf_Dict['initial_random'] = 10
+        conf_Dict['num_iteration'] = 50
+
+        self.obs = col_serie[1]
+        self.type_model = "hwep"
+        params_grid = self.params_Exp_Smoot()
+        tuner = Tuner(params_grid, self.get_hyperparameters_exp_smoot, conf_Dict)
+        results = tuner.minimize()
+        params = results['best_params']
+        print(' >> Seleccion del mejor parametro: ', params)
+        print(' >> Mejor error: ', results['best_objective'])
+
+        # Perform simple exponential smoothing
+        model = ExponentialSmoothing(self.train_df[self.col_transf], initialization_method = params["initialization_method"], trend = params["trend"], seasonal = params["trend"], use_boxcox = params["use_boxcox"])
+        model_expSmoot = model.fit(smoothing_level = params["smoothing_level"], smoothing_trend = params["smoothing_trend"], smoothing_seasonal = params["smoothing_seasonal"], optimized = params["optimized"])
+        #pred = ses_model.fittedvalues
+        pred = model_expSmoot.forecast(len(test))
+
+        name_col_real = col_serie[1] + "_real"
+        name_col_pred = col_serie[1] + "_pred"
+        test[name_col_pred] = pred.tolist()
+
+        if self.flag_boxcox:
+            test[name_col_pred] = inv_boxcox(test[name_col_pred], self.lam)
+            
+        else:
+            test[name_col_pred] = self.minMaxScaler.inverse_transform(test[[name_col_pred]])
+
+        test[name_col_pred] = test[name_col_pred].round(2)
+        test.rename(columns = {col_serie[1]: name_col_real}, inplace = True)
+        
+        test["accuracy"] = self.forecast_accuracy(test[name_col_real], test[name_col_pred])
+        test.loc[test["accuracy"].isnull(), "accuracy"] = 0
+        test["accuracy"] = test["accuracy"].round(2)
+        mae, rmse, mape, acc = self.get_metrics_pred(test, name_col_real, name_col_pred)
+        
+        coef_det = r2_score(test[name_col_real], test[name_col_pred], multioutput = 'variance_weighted')
+        if coef_det < 0:
+            coef_det = abs(coef_det)
+
+        data_metric = pd.DataFrame()
+        data_metric["mae"] = [mae]
+        data_metric["rmse"] = [rmse]
+        data_metric["mape"] = [mape]
+        data_metric["acc"] = [acc]
+        data_metric["r2"] = [round(coef_det, 2)]
+
+        print(test.head())
+        print("---"*30)
+
+        # Proceso: Generacion de fsct en base a intevarlo de periodos determinados
+        data_serie = self.validate_data_serie_models(data[col_serie[0]].max(), period, period_fsct)
+        data_serie.rename(columns = {"date": col_serie[0]}, inplace = True)
+        
+        # diff_days -> El fsct debe contemplarse apartir de la ultima fecha del train_set (Se suman las fechas del test y las predicciones a futuro)
+        #diff_days = (data_serie[col_serie[0]].max() - test[col_serie[0]].min()).days
+        pred = model_expSmoot.forecast(len(data_serie))
+        data_serie[name_col_pred] = pred.tolist()
+        
+        if self.flag_boxcox:
+            data_serie[name_col_pred] = inv_boxcox(data_serie[name_col_pred], self.lam)
+
+        else:
+            data_serie[name_col_pred] = self.minMaxScaler.inverse_transform(data_serie[[name_col_pred]])
+
+        data_serie[name_col_pred] = data_serie[name_col_pred].round(2)
+        data_serie[name_col_pred] = data_serie[name_col_pred].abs()
+
+        columns = data.columns.tolist()[:2]
+        #data_fsct = self.get_data_fsct_model(data_serie[name_col_pred].values.tolist(), period_fsct, period, data.segment.unique().tolist()[0], "Prophet")
+        data_fsct = self.get_data_fsct_model(data_serie[name_col_pred].values.tolist(), period_fsct, period, data[columns[0]].unique().tolist()[0], data[columns[1]].unique().tolist()[0], "HWEP")
+        print(data_fsct)
+        print("---"*30)
+
+        return data_metric, data_fsct
+
     # Modulo: Generacion del intervalo de fechas forecast
     def validate_data_serie_models(self, start_date, period, period_fsct):
         if period == "month":
