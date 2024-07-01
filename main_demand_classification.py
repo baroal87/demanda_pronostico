@@ -492,7 +492,7 @@ class Main_Demand_Series_Times():
                     print("\n >>> Models: Holt Winter Exponential Smoothing <<<\n")
                     start_time_model = time()
                     #data_metric, data_fsct = self.model.get_model_prophet(group.copy(), col_serie = col_serie, period = period, type_seasonal = data_comp_seasonal[data_comp_seasonal.label == list(name)[0]].type_seasonal.values[0])
-                    data_metric, data_fsct = self.model.get_model_hes(group.copy(), col_serie = col_serie, period = period, period_fsct = period_fsct)
+                    data_metric, data_fsct = self.model.get_model_hwes(group.copy(), col_serie = col_serie, period = period, period_fsct = period_fsct)
                     data_metric["label"] = list(name)[0]
                     end_time_model = time()
                     data_metric["seconds"] = round(end_time_model - start_time_model, 2)
@@ -587,7 +587,6 @@ class Main_Demand_Series_Times():
             if len(temp) != 0:
                 for label in temp.label.unique().tolist():
                     value_xyz = temp[temp.label == label].category_xyz.unique().tolist()[0]
-                    print(value_xyz)
                     metrics, seasonal_data = self.functions.get_graph_series_data(temp[temp.label == label][col_serie], col_serie, period)
                     data_comp_seasonal.append({"label": label, "p-value_add": metrics[0], "acf_add": metrics[1], "p-value_mult": metrics[2], "acf_mult": metrics[3], "type_seasonal": metrics[4]})
 

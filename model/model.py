@@ -59,6 +59,8 @@ from pmdarima.utils import diff_inv
 #from numba import jit, cuda
 import torch
 
+#import traceback
+
 class Model_Series_Times():
 
     # Modulo: Constructor
@@ -71,7 +73,7 @@ class Model_Series_Times():
         self.encoder = OrdinalEncoder()
         self.labelencoder = LabelEncoder()
         self.minMaxScaler = MinMaxScaler()
-        self.powerTransf = PowerTransformer(method='box-cox', standardize=False)
+        self.powerTransf = PowerTransformer(method = 'box-cox', standardize = False)
 
     # Modulo: Computo y evaluacion de metricas del fosct del modelo
     def get_metrics_pred(self, X_test, name_col_real, name_col_pred):
@@ -442,21 +444,32 @@ class Model_Series_Times():
         results = []
         for params in params_grid:
             try:
-                global train, test, name_col_transf, col_serie
+                #global train, test, name_col_transf, col_serie
                 model = Prophet(**params)
-                model.fit(train[[col_serie[0], name_col_transf]].rename(columns = {col_serie[0]: "ds", name_col_transf: "y"}))
-                diff_days = (test[col_serie[0]].max() - test[col_serie[0]].min()).days
+                model.fit(self.train_df[[self.obs[0], self.col_transf]].rename(columns = {self.obs[0]: "ds", self.col_transf: "y"}))
+                diff_days = (self.test_df[self.obs[0]].max() - self.test_df[self.obs[0]].min()).days
                 future = model.make_future_dataframe(periods = diff_days, freq = 'D')
-                future_data['cap'] = 6
+                #future['cap'] = 6
                 forecast = model.predict(future)
-                future_data = forecast.tail(diff_days)
+                #future_data = forecast.tail(diff_days)
+                forecast.rename(columns = {"ds": self.obs[0]}, inplace = True)
+                self.test_df = pd.merge(self.test_df, forecast[[self.obs[0], 'yhat']], how = "left", on = [self.obs[0]])
+
+                if self.flag_boxcox:
+                    self.test_df['yhat'] = inv_boxcox(self.test_df['yhat'], self.lam)
+
+                else:
+                    self.test_df['yhat'] = self.minMaxScaler.inverse_transform(self.test_df[['yhat']])
 
                 #error = mape(test['sales'], future_data['yhat'])
-                error = mean_absolute_percentage_error(test[col_serie[1]], future_data['yhat'])
+                error = mean_absolute_percentage_error(self.test_df[self.obs[1]], self.test_df['yhat'])
                 params_evaluated.append(params)
                 results.append(error)
 
+                self.test_df.drop('yhat', axis = 1, inplace = True)
+
             except:
+                #print(traceback.format_exc())
                 params_evaluated.append(params)
                 results.append(25.0)# Giving high loss for exceptions regions of spaces
 
@@ -477,21 +490,26 @@ class Model_Series_Times():
 
         # Proceso de transformacion y estandarizacion de los datos
         name_col_transf = col_serie[1] + "_scaled"
-        transformed, lam = boxcox(train[col_serie[1]])
-        flag_boxcox = False
-        if lam < -5:
-            train[name_col_transf], lam = boxcox(train[col_serie[1]])
-            flag_boxcox = True
+        self.col_transf = name_col_transf
+        transformed, self.lam = boxcox(train[col_serie[1]])
+        self.flag_boxcox = False
+        if self.lam < -5:
+            train[name_col_transf], self.lam = boxcox(train[col_serie[1]])
+            self.flag_boxcox = True
 
         else:
             #train[name_col_transf] = self.scaler.fit_transform(train[[col_serie[1]]])
             train[name_col_transf] = self.minMaxScaler.fit_transform(train[[col_serie[1]]])
             #train[name_col_transf] = self.powerTransf.fit_transform(train[[col_serie[1]]])
             
+        self.train_df = train.copy()
+        self.test_df = test.copy()
+
         conf_Dict = dict()
         conf_Dict['initial_random'] = 10
         conf_Dict['num_iteration'] = 50
 
+        self.obs = col_serie
         params_grid = self.parameter_prophet()
         tuner = Tuner(params_grid, self.get_hyperparameters_prophet, conf_Dict)
         results = tuner.minimize()
@@ -525,8 +543,8 @@ class Model_Series_Times():
         test = pd.merge(test, forecast[[col_serie[0], name_col_pred]], how = "left", on = [col_serie[0]])
 
         # Proceso de transformacion inversa
-        if flag_boxcox:
-            test[name_col_pred] = inv_boxcox(test[name_col_pred], lam)
+        if self.flag_boxcox:
+            test[name_col_pred] = inv_boxcox(test[name_col_pred], self.lam)
 
         else:
             #test[name_col_pred] = self.scaler.inverse_transform(test[[name_col_pred]])
@@ -570,8 +588,8 @@ class Model_Series_Times():
         forecast.rename(columns = {"ds": col_serie[0], "yhat": name_col_pred}, inplace = True)
         data_serie = pd.merge(data_serie, forecast[[col_serie[0], name_col_pred]], how = "left", on = [col_serie[0]])
         
-        if flag_boxcox:
-            data_serie[name_col_pred] = inv_boxcox(data_serie[name_col_pred], lam)
+        if self.flag_boxcox:
+            data_serie[name_col_pred] = inv_boxcox(data_serie[name_col_pred], self.lam)
 
         else:
             data_serie[name_col_pred] = self.minMaxScaler.inverse_transform(data_serie[[name_col_pred]])
@@ -1251,8 +1269,8 @@ class Model_Series_Times():
             
         elif self.type_model == "hes":
             params_grid = dict(initialization_method = ['estimated', 'heuristic', 'legacy-heuristic'],
-                               exponential = [True, False],
-                               damped_trend = [True, False],
+                               #exponential = [True, False],
+                               #damped_trend = [True, False],
                                # Fit
                                smoothing_level = [0.1, 0.2, 0.3, 0.5, 0.7, 0.8],
                                smoothing_trend = [0.2, 0.4, 0.6, 0.8],
@@ -1260,11 +1278,11 @@ class Model_Series_Times():
 
         else:
             params_grid = dict(initialization_method = ['estimated', 'heuristic', 'legacy-heuristic'],
-                               exponential = [True, False],
-                               damped_trend = [True, False],
-                               trend = ['add', "mul", "additive", "multiplicative"],
-                               seasonal = ['add', "mul", "additive", "multiplicative"],
-                               use_boxcox = [True, False, "log"],
+                               #exponential = [True, False],
+                               #damped_trend = [True, False],
+                               trend = ['add', "mul"],
+                               seasonal = ['add', "mul"],
+                               #use_boxcox = [True, False],
                                # Fit
                                smoothing_level = [0.1, 0.2, 0.3, 0.5, 0.7, 0.8],
                                smoothing_trend = [0.2, 0.4, 0.6, 0.8],
@@ -1296,22 +1314,27 @@ class Model_Series_Times():
                 model_exp_smoot = model.fit(smoothing_level = params["smoothing_level"], smoothing_trend = params["smoothing_trend"], optimized = params["optimized"])
 
             else:
-                model = ExponentialSmoothing(self.train_df[self.col_transf], initialization_method = params["initialization_method"], trend = params["trend"], seasonal = params["seasonal"], use_boxcox = params["use_boxcox"])
+                model = ExponentialSmoothing(self.train_df[self.col_transf], initialization_method = params["initialization_method"], trend = params["trend"], seasonal = params["seasonal"])#, use_boxcox = params["use_boxcox"])
                 model_exp_smoot = model.fit(smoothing_level = params["smoothing_level"], smoothing_trend = params["smoothing_trend"], smoothing_seasonal = params["smoothing_seasonal"], optimized = params["optimized"])
 
             pred = model_exp_smoot.forecast(len(self.test_df))
             self.test_df[name_col_pred] = pred.tolist()
+            self.test_df["test"] = pred.tolist()
             if self.flag_boxcox:
                 self.test_df[name_col_pred] = inv_boxcox(self.test_df[name_col_pred], self.lam)
                 
             else:
-                self.test_df[name_col_pred] = self.minMaxScaler.inverse_transform(self.test_df[[name_col_pred]])
+                #self.test_df[name_col_pred] = self.scaler.inverse_transform(self.test_df[[name_col_pred]])
+                self.test_df[name_col_pred] = self.test_df[name_col_pred].apply(lambda x: round(np.exp(x), 2))
+                #pass
 
+            print(self.test_df)
             error = mean_absolute_percentage_error(self.test_df[self.obs], self.test_df[name_col_pred])
             params_evaluated.append(params)
             results.append(error)
 
-            self.test_df.drop(name_col_pred, axis = 1, inplace = True)
+            self.test_df.drop([name_col_pred, "test"], axis = 1, inplace = True)
+            print(error)
 
         return params_evaluated, results
 
@@ -1336,7 +1359,7 @@ class Model_Series_Times():
         transformed, self.lam = boxcox(train[col_serie[1]])
         self.flag_boxcox = False
         if self.lam < -5:
-            train[name_col_transf], lam = boxcox(train[col_serie[1]])
+            train[name_col_transf], self.lam = boxcox(train[col_serie[1]])
             #train[name_col_transf] = self.scaler.fit_transform(train[name_col_transf])
             self.flag_boxcox = True
             
@@ -1475,7 +1498,7 @@ class Model_Series_Times():
         print(' >> Mejor error: ', results['best_objective'])
 
         # Perform simple exponential smoothing
-        model = Holt(self.train_df[self.col_transf], initialization_method = params["initialization_method"], damped_trend = params["damped_trend"])
+        model = Holt(self.train_df[self.col_transf], initialization_method = params["initialization_method"])
         model_hes = model.fit(smoothing_level = params["smoothing_level"], smoothing_trend = params["smoothing_trend"], optimized = params["optimized"])
         #pred = ses_model.fittedvalues
         pred = model_hes.forecast(len(test))
@@ -1545,6 +1568,8 @@ class Model_Series_Times():
         - Ademas de los factores de suavizado alfa y beta, integra un nuevo parametro gamma que controla la influencia sobre 
           el componente estacional
         - El método admite tendencias: aditiva (tendencia lineal) y multiplicativa (tendencia exponencial)
+        - Componente de tendencia: Se reduce multiplicando la pendiente del valor de la tendencia en cada paso temporal por un valor exponencialmente decreciente
+        - Componente de nivel: Representa el valor de referencia de la serie temporal teniendo en cuenta la estacionalidad y la tendencia.
         """
         data = data.dropna().reset_index(drop = True)
         data = data.sort_values(col_serie[0], ascending = True)
@@ -1561,7 +1586,9 @@ class Model_Series_Times():
             self.flag_boxcox = True
             
         else:
-            train[name_col_transf] = self.minMaxScaler.fit_transform(train[[col_serie[1]]])
+            #train[name_col_transf] = self.scaler.fit_transform(train[[col_serie[1]]])
+            train[name_col_transf] = train[col_serie[1]].apply(lambda x: np.log(x))
+            #pass
 
         train = train[[col_serie[0], name_col_transf]].set_index([col_serie[0]])
         self.train_df = train.copy()
